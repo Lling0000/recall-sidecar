@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Recall Sidecar</title>
+    <link rel="stylesheet" href="/icons.css">
+    <link rel="stylesheet" href="/app.css">
+  </head>
+  <body>
+    <div class="shell">
+      <aside>
+        <div class="brand">Recall Sidecar</div>
+        <p class="tagline">本机 Agent 记忆</p>
+        <nav aria-label="看板页面">
+          <button data-page="reviews"><i class="ph-thin ph-check-square-offset" aria-hidden="true"></i><span>待核对</span></button>
+          <button data-page="memories"><i class="ph-thin ph-book-open" aria-hidden="true"></i><span>记忆</span></button>
+          <button data-page="model"><i class="ph-thin ph-cube" aria-hidden="true"></i><span>模型</span></button>
+          <button data-page="health"><i class="ph-thin ph-heartbeat" aria-hidden="true"></i><span>健康</span></button>
+        </nav>
+        <div class="local-only"><i class="ph-thin ph-monitor" aria-hidden="true"></i><span>仅在 127.0.0.1 运行</span></div>
+      </aside>
+      <main>
+        <header>
+          <div><h1 id="page-title">正在连接</h1><p id="page-subtitle"></p></div>
+          <span id="status" role="status"></span>
+        </header>
+        <section id="content" aria-live="polite"></section>
+      </main>
+    </div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

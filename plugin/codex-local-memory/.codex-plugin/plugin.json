@@ -1,0 +1,21 @@
+{
+  "name": "codex-local-memory",
+  "version": "0.1.0",
+  "description": "Recall Sidecar: repository-scoped local correction memory for Codex on macOS.",
+  "author": {
+    "name": "codex-local-memory"
+  },
+  "license": "UNLICENSED",
+  "keywords": ["codex", "local-memory", "corrections"],
+  "interface": {
+    "displayName": "Recall Sidecar",
+    "shortDescription": "Local repository-scoped correction recall.",
+    "longDescription": "Recalls local correction cards and extracts new cards after completed turns.",
+    "developerName": "codex-local-memory",
+    "category": "Productivity",
+    "capabilities": ["Local correction memory"],
+    "defaultPrompt": [
+      "Use the automatically recalled repository corrections while handling my current request."
+    ]
+  }
+}

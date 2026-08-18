@@ -1,0 +1,6 @@
+{"timestamp":"2026-08-18T00:00:00.000Z","type":"session_meta","payload":{"id":"session-subagent-1","cli_version":"0.148.0-alpha.9","thread_source":"subagent","source":"subagent","inter_agent_communication_metadata":{"recipient":"root"}}}
+{"timestamp":"2026-08-18T00:00:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-subagent"}}
+{"timestamp":"2026-08-18T00:00:02.000Z","type":"event_msg","payload":{"type":"user_message","message":"不要抽取我"}}
+{"timestamp":"2026-08-18T00:00:03.000Z","type":"event_msg","payload":{"type":"agent_message","phase":"final_answer","message":"不会抽取。"}}
+{"timestamp":"2026-08-18T00:00:04.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-subagent"}}
+
