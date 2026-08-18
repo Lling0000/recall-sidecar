@@ -12,6 +12,7 @@ export interface ModelConfiguration {
   max_retries: 1;
   daily_extract_limit: number;
   allow_loopback_http: boolean;
+  disable_thinking: boolean;
 }
 
 export interface ExtractionInput {

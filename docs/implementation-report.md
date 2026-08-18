@@ -23,6 +23,7 @@
 - Codex CLI：`codex-local-memory@codex-local-memory-local` 为 `installed, enabled`。
 - Hook trust：三个事件均逐一审查并显示 Installed 1 / Active 1 / Review 0。
 - Hook 实跑：新会话成功绑定；最小回合产生一个 `state=skipped` Turn、零 refine job，证明 `auto_extract` 关闭时无抽取外发。
+- 模型复测：TeamoRouter `GET /models` 返回 39 个模型；免费候选输出不稳定，未获准启用。`gpt-5.4` 的正式连接测试、create v1、同主题 update v2 均一次通过，因此仅对该 Origin + 模型配置开启 `auto_extract`。
 - 最终 lint、结构检查、类型检查、构建和文档一致性：全部通过。
 
 ## 剩余 P1
@@ -36,7 +37,6 @@
 ## 已知限制
 
 - 只白名单支持 Codex CLI `0.148.0-alpha.9`；其他完整版本会安全跳过抽取并告警。
-- 未提供用户模型凭据，因此没有对真实远程供应商执行连接测试；`auto_extract` 保持关闭。用户必须在模型页通过正式 Schema 测试并同意 Prompt/最终回答外发后才能开启。
+- 已对用户指定的远程供应商执行最小连接与两轮纠偏测试；免费模型未通过，`gpt-5.4` 通过并已启用。更换 Origin、模型或撤回 Prompt/最终回答同意时，`auto_extract` 会再次关闭并要求重新验证。
 - 看板固定使用 `127.0.0.1:43127`；端口被其他进程占用时 Sidecar 会失败并由 Hook fail-open。
 - Docker Hub 认证端点两次超时后，从 DaoCloud 代理取得同一固定 Node 镜像，最终使用 digest `sha256:4e6b70dd6cbfc88c8157ba19aa3d9f9cce6ba4703576d55459e45efcbc9c5f5d` 完成验收。
-

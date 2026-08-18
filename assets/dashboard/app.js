@@ -249,11 +249,15 @@ async function renderModel() {
   key.type = "password";
   const loopback = document.createElement("input");
   loopback.type = "checkbox";
-  form.append(labelNode("Base URL", base), labelNode("模型", model), labelNode("API Key", key), checkNode("允许 HTTP loopback 本地模型", loopback));
+  loopback.checked = data.configuration?.allow_loopback_http === true;
+  const disableThinking = document.createElement("input");
+  disableThinking.type = "checkbox";
+  disableThinking.checked = data.configuration?.disable_thinking === true;
+  form.append(labelNode("Base URL", base), labelNode("模型", model), labelNode("API Key", key), checkNode("允许 HTTP loopback 本地模型", loopback), checkNode("禁用模型思考（节省 token）", disableThinking));
   configuration.append(form, actionButton("保存配置", "primary", async () => {
     await api("/api/model/configure", {
       method: "POST",
-      body: JSON.stringify({ base_url: base.value, model: model.value, api_key: key.value, allow_loopback_http: loopback.checked }),
+      body: JSON.stringify({ base_url: base.value, model: model.value, api_key: key.value, allow_loopback_http: loopback.checked, disable_thinking: disableThinking.checked }),
     });
     await renderModel();
   }, "floppy-disk"));

@@ -23,14 +23,24 @@ export class ModelManager {
   async configure(
     baseUrl: string,
     model: string,
-    apiKey: string,
+    apiKey: string | null,
     allowLoopbackHttp = false,
+    disableThinking = false,
   ): Promise<void> {
-    const configuration = createModelConfiguration(baseUrl, model, allowLoopbackHttp);
-    if (!apiKey) throw new Error("api_key_required");
+    const configuration = createModelConfiguration(
+      baseUrl,
+      model,
+      allowLoopbackHttp,
+      disableThinking,
+    );
+    if (!apiKey && !(await this.keyProvider.get())) {
+      throw new Error("api_key_required");
+    }
     this.database.modelSettings.saveConfiguration(configuration);
-    await this.keyProvider.delete();
-    await this.keyProvider.set(apiKey);
+    if (apiKey) {
+      await this.keyProvider.delete();
+      await this.keyProvider.set(apiKey);
+    }
   }
 
   async testConnection(): Promise<ModelCallResult> {

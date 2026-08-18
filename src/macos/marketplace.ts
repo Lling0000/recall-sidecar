@@ -28,5 +28,5 @@ export function marketplaceManifest(): string {
 
 export function hookWrapper(nodeExecutable: string): string {
   const escaped = nodeExecutable.replaceAll("'", `'\\''`);
-  return `#!/bin/sh\nexec '${escaped}' "$PLUGIN_ROOT/runtime/cli.js" hook "$1"\n`;
+  return `#!/bin/sh\nexec '${escaped}' "$PLUGIN_ROOT/runtime/hook-cli.js" "$1"\n`;
 }

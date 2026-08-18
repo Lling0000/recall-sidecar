@@ -21,16 +21,11 @@ export class MacKeychain implements ApiKeyProvider {
 
   async set(value: string): Promise<void> {
     if (!value) throw new Error("api_key_required");
-    await runMacosCommand("/usr/bin/security", [
-      "add-generic-password",
-      "-a",
-      KEYCHAIN_ACCOUNT,
-      "-s",
-      KEYCHAIN_SERVICE,
-      "-w",
-      value,
-      "-U",
-    ]);
+    await runMacosCommand(
+      "/usr/bin/expect",
+      ["-c", keychainWriteScript()],
+      `${value}\n`,
+    );
   }
 
   async delete(): Promise<void> {
@@ -46,4 +41,26 @@ export class MacKeychain implements ApiKeyProvider {
       // A missing entry is already in the desired state.
     }
   }
+}
+
+function keychainWriteScript(): string {
+  return `
+log_user 0
+set timeout 10
+if {[gets stdin secret] < 0} { exit 2 }
+spawn /usr/bin/security add-generic-password -a ${KEYCHAIN_ACCOUNT} -s ${KEYCHAIN_SERVICE} -U -w
+set prompts 0
+expect {
+  -re {password.*:} {
+    incr prompts
+    send -- "$secret\\r"
+    exp_continue
+  }
+  timeout { exit 3 }
+  eof {}
+}
+if {$prompts < 1} { exit 4 }
+set result [wait]
+exit [lindex $result 3]
+`;
 }

@@ -114,6 +114,7 @@ export class StrictModelClient {
               schema: EXTRACT_RESPONSE_SCHEMA,
             },
           },
+          ...(configuration.disable_thinking ? { thinking: { type: "disabled" } } : {}),
           max_tokens: configuration.max_output_tokens,
         }),
       });

@@ -51,7 +51,10 @@ test("installer copies a self-contained runtime and uninstall keeps data", async
 
   const installedCli = join(result.layout.runtimeDirectory, "cli.js");
   const wrapper = join(result.layout.pluginDirectory, "bin", "codex-local-memory-hook");
-  assert.match(await readFile(wrapper, "utf8"), /\$PLUGIN_ROOT\/runtime\/cli\.js/u);
+  assert.match(
+    await readFile(wrapper, "utf8"),
+    /\$PLUGIN_ROOT\/runtime\/hook-cli\.js/u,
+  );
   assert.match(await readFile(wrapper, "utf8"), /\/opt\/codex-local\/node/u);
   assert.match(await readFile(result.layout.launchAgent, "utf8"), /KeepAlive/u);
   assert.match(

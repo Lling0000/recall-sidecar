@@ -112,3 +112,17 @@ test("failed strict Schema connection test cannot enable auto_extract", async ()
     database.close();
   }
 });
+
+test("model reconfiguration can reuse an existing Keychain secret", async () => {
+  const root = await mkdtemp(join(tmpdir(), "clm-manager-"));
+  const database = new MemoryDatabase(join(root, "memory.sqlite"));
+  const keyProvider = new MemoryKeyProvider("stored-key");
+  const manager = new ModelManager(database, keyProvider);
+  try {
+    await manager.configure("https://model.example/v1", "stored-key-model", null);
+    assert.equal(await keyProvider.get(), "stored-key");
+    assert.equal(database.modelSettings.getConfiguration()?.model, "stored-key-model");
+  } finally {
+    database.close();
+  }
+});

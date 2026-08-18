@@ -200,11 +200,16 @@ export class DashboardApi {
     }
     if (url.pathname === "/api/model/configure" && request.method === "POST") {
       const body = await readJsonBody(request);
+      const apiKey =
+        body.api_key === undefined || body.api_key === ""
+          ? null
+          : requiredString(body.api_key, "api_key", 20_000);
       await this.models.configure(
         requiredString(body.base_url, "base_url", 2_000),
         requiredString(body.model, "model", 200),
-        requiredString(body.api_key, "api_key", 20_000),
+        apiKey,
         body.allow_loopback_http === true,
+        body.disable_thinking === true,
       );
       sendJson(response, 200, { ok: true });
       return true;

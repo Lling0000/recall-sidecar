@@ -481,11 +481,14 @@ memory: active → superseded | archived | deleted
 |---|---|
 | Base URL | `https://api.teamorouter.com/v1` |
 | 低成本候选模型 | `deepseek-v4-flash-free` |
+| 最终验证模型 | `gpt-5.4` |
 | `GET /models` | 鉴权成功，HTTP 200，共返回 39 个模型 |
-| strict Schema 请求 | `POST /chat/completions` 在模型执行前返回 HTTP 402 `insufficient_balance` |
-| 当前结论 | 尚未验证该模型是否支持 3.7 的 strict `json_schema`；`auto_extract` 必须保持关闭 |
+| 免费模型结果 | 默认思考模式可能耗尽输出预算；关闭思考后仍出现误判 `reject` 和 `model_invalid_structured_output`，不获准启用 |
+| `gpt-5.4` strict 连接 | 一次通过正式 `json_schema` 连接测试 |
+| `gpt-5.4` 两轮纠偏 | 第一次一次请求 `create` v1；第二次一次请求命中同一记忆并 `update` 到 v2，active 正文为 45s |
+| 当前结论 | `auto_extract` 仅对本次已验证的 Origin + `gpt-5.4` 配置开启；更换模型后必须重新验证 |
 
-该记录只用于开发环境连通性复测，不把 TeamoRouter 或该模型设为产品默认供应商。凭据不得写入本文件、仓库、日志或命令参数，必须使用 Keychain；任何曾粘贴到聊天正文的 Key 都应先轮换，再在充值或账户恢复后重跑同一份正式 Schema 连接测试。只有请求到达模型、返回 HTTP 2xx，且响应同时通过 Schema 与 action 语义校验，才可把验证状态改为“通过”。
+该记录只用于开发环境连通性复测，不把 TeamoRouter 或该模型设为产品默认供应商。凭据不得写入本文件、仓库、日志、环境变量或命令参数，必须通过关闭回显的 Keychain 交互写入；任何曾粘贴到聊天正文的 Key 都应先轮换。单次连接样例成功不足以开启自动抽取；还必须用真实 create / update / skip 样例稳定通过 Schema 与 action 语义校验，才可把验证状态改为“通过”。
 
 功能：填写 Base URL、模型、API Key；用 3.7 的正式 Schema 测试严格 `json_schema`；确认抽取外发字段；预览实际发送的密钥遮蔽后内容；暂停模型；查看调用失败。不支持严格 Schema 时连接测试失败，`auto_extract` 保持关闭。
 
