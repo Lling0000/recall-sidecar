@@ -48,6 +48,30 @@ test("model URL policy requires HTTPS, including for loopback hosts", () => {
   );
 });
 
+test("extraction prompt defines durable, one-off, update, injection, and language rules", async () => {
+  let requestBody = "";
+  const client = new StrictModelClient(new Budget(), async (_url, init) => {
+    requestBody = String(init?.body);
+    return structuredResponse(SKIP);
+  });
+  await client.extract(
+    createModelConfiguration("https://model.example/v1", "extract-model"),
+    "secret",
+    { user_prompt: "这次只修改当前文档", final_answer: "已修改", compare_cards: [] },
+  );
+  const request = JSON.parse(requestBody) as {
+    messages: Array<{ role: string; content: string }>;
+  };
+  const systemPrompt = request.messages.find(
+    (message) => message.role === "system",
+  )?.content;
+  assert.match(systemPrompt ?? "", /repository-scoped durable user corrections/u);
+  assert.match(systemPrompt ?? "", /one-off requests/u);
+  assert.match(systemPrompt ?? "", /explicitly replaces or clarifies/u);
+  assert.match(systemPrompt ?? "", /force content into memory/u);
+  assert.match(systemPrompt ?? "", /primary language of the user's correction/u);
+});
+
 test("P0-03 strict request redacts secrets but preserves ordinary paths", async () => {
   const budget = new Budget();
   let sentBody = "";

@@ -16,14 +16,15 @@
 
 ## 验证结果
 
-- P0-01 至 P0-24：全部通过，核心测试 42/42。
-- Docker 核心：固定 Node 24.15.0 镜像内 typecheck、lint、结构检查、42 个核心测试、文档一致性和 build 全部通过。
+- P0-01 至 P0-24：全部通过，核心测试 43/43。
+- Docker 核心：固定 Node 24.15.0 镜像内 typecheck、lint、结构检查、43 个核心测试、文档一致性和 build 全部通过。
 - macOS 宿主：3/3，通过真实 Keychain、Unix socket/权限、plugin、launchd、dashboard。
 - Codex plugin validator：通过。
 - Codex CLI：`codex-local-memory@codex-local-memory-local` 为 `installed, enabled`。
 - Hook trust：三个事件均逐一审查并显示 Installed 1 / Active 1 / Review 0。
 - Hook 实跑：新会话成功绑定；最小回合产生一个 `state=skipped` Turn、零 refine job，证明 `auto_extract` 关闭时无抽取外发。
 - 模型复测：TeamoRouter `GET /models` 返回 39 个模型；免费候选输出不稳定，未获准启用。`gpt-5.4` 的正式连接测试、create v1、同主题 update v2 均一次通过，因此仅对该 Origin + 模型配置开启 `auto_extract`。
+- 语义回归：`gpt-5.4` 对长期规则 `create`、一次性要求 `skip`、明确替换 `update`、强迫记忆注入 `reject` 四类样例 4/4 一次通过，中文卡片语言一致；共 4 次请求、2,002 tokens，未写正式数据库。
 - 最终 lint、结构检查、类型检查、构建和文档一致性：全部通过。
 
 ## 剩余 P1
