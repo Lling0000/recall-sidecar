@@ -7,16 +7,6 @@ import {
 } from "../../src/model/configuration.js";
 import { redactSecrets } from "../../src/security/redact.js";
 
-class Budget {
-  attempts = 0;
-  constructor(private readonly allowed = 100) {}
-  reserveAttempt(): boolean {
-    if (this.attempts >= this.allowed) return false;
-    this.attempts += 1;
-    return true;
-  }
-}
-
 function structuredResponse(value: unknown, status = 200): Response {
   return new Response(
     JSON.stringify({
@@ -50,7 +40,7 @@ test("model URL policy requires HTTPS, including for loopback hosts", () => {
 
 test("extraction prompt defines durable, one-off, update, injection, and language rules", async () => {
   let requestBody = "";
-  const client = new StrictModelClient(new Budget(), async (_url, init) => {
+  const client = new StrictModelClient(async (_url, init) => {
     requestBody = String(init?.body);
     return structuredResponse(SKIP);
   });
@@ -73,10 +63,9 @@ test("extraction prompt defines durable, one-off, update, injection, and languag
 });
 
 test("P0-03 strict request redacts secrets but preserves ordinary paths", async () => {
-  const budget = new Budget();
   let sentBody = "";
   let sentAuthorization = "";
-  const client = new StrictModelClient(budget, async (_url, init) => {
+  const client = new StrictModelClient(async (_url, init) => {
     sentBody = String(init?.body);
     sentAuthorization = new Headers(init?.headers).get("authorization") ?? "";
     assert.equal(init?.redirect, "manual");
@@ -95,7 +84,7 @@ test("P0-03 strict request redacts secrets but preserves ordinary paths", async 
   });
 
   assert.equal(response.result.action, "skip");
-  assert.equal(budget.attempts, 1);
+  assert.equal(response.attempts, 1);
   assert.equal(sentAuthorization, "Bearer key-only-in-header");
   assert.doesNotMatch(sentBody, new RegExp(pat, "u"));
   assert.doesNotMatch(sentBody, new RegExp(jwt.replaceAll(".", "\\."), "u"));
@@ -111,7 +100,7 @@ test("P0-03 strict request redacts secrets but preserves ordinary paths", async 
 
 test("P0-20 ordinary JSON without strict Schema support never falls back", async () => {
   let calls = 0;
-  const client = new StrictModelClient(new Budget(), async () => {
+  const client = new StrictModelClient(async () => {
     calls += 1;
     return new Response("unsupported response_format", { status: 400 });
   });
@@ -128,7 +117,7 @@ test("P0-20 ordinary JSON without strict Schema support never falls back", async
 
 test("invalid structured output is rejected without repair", async () => {
   let calls = 0;
-  const client = new StrictModelClient(new Budget(), async () => {
+  const client = new StrictModelClient(async () => {
     calls += 1;
     return structuredResponse({ ...SKIP, extra: "not allowed" });
   });
@@ -144,10 +133,9 @@ test("invalid structured output is rejected without repair", async () => {
   assert.equal(calls, 1);
 });
 
-test("one bounded 5xx retry consumes two daily attempts", async () => {
-  const budget = new Budget();
+test("one bounded 5xx retry performs two transport attempts", async () => {
   let calls = 0;
-  const client = new StrictModelClient(budget, async () => {
+  const client = new StrictModelClient(async () => {
     calls += 1;
     return calls === 1
       ? new Response("temporary", { status: 503 })
@@ -159,12 +147,12 @@ test("one bounded 5xx retry consumes two daily attempts", async () => {
     { user_prompt: "hello", final_answer: "hello", compare_cards: [] },
   );
   assert.equal(result.attempts, 2);
-  assert.equal(budget.attempts, 2);
+  assert.equal(calls, 2);
 });
 
 test("P0-11 redirect is rejected and Authorization is never forwarded", async () => {
   let calls = 0;
-  const client = new StrictModelClient(new Budget(), async () => {
+  const client = new StrictModelClient(async () => {
     calls += 1;
     return new Response(null, {
       status: 302,

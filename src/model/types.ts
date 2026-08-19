@@ -11,7 +11,6 @@ export interface ModelConfiguration {
   max_output_tokens: number;
   max_response_bytes: number;
   max_retries: 1;
-  daily_extract_limit: number;
 }
 
 export interface ExtractionInput {

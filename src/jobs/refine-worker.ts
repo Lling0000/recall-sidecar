@@ -32,9 +32,8 @@ export class RefineWorker {
     sessionClient?: SessionRefineClient,
     private readonly checkpointTurnInterval = 25,
   ) {
-    this.client = client ?? new StrictModelClient(database.modelSettings);
-    this.sessionClient =
-      sessionClient ?? new SessionRefineClient(database.modelSettings);
+    this.client = client ?? new StrictModelClient();
+    this.sessionClient = sessionClient ?? new SessionRefineClient();
   }
 
   wake(): void {

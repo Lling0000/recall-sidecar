@@ -21,30 +21,27 @@ const CARD = {
 
 test("Gate and Refiner use the configured higher-tier model with strict schemas", async () => {
   const requests: Array<Record<string, unknown>> = [];
-  const client = new SessionRefineClient(
-    { reserveAttempt: () => true },
-    async (_url, init) => {
-      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      requests.push(body);
-      const name = (body.response_format as { json_schema: { name: string } })
-        .json_schema.name;
-      return response(
-        name.endsWith("_gate")
-          ? { should_refine: true, candidate_turn_ids: ["turn-1"] }
-          : {
-              edits: [
-                {
-                  action: "create",
-                  source_turn_id: "turn-1",
-                  target_memory_id: null,
-                  base_version: null,
-                  memory: CARD,
-                },
-              ],
-            },
-      );
-    },
-  );
+  const client = new SessionRefineClient(async (_url, init) => {
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    requests.push(body);
+    const name = (body.response_format as { json_schema: { name: string } }).json_schema
+      .name;
+    return response(
+      name.endsWith("_gate")
+        ? { should_refine: true, candidate_turn_ids: ["turn-1"] }
+        : {
+            edits: [
+              {
+                action: "create",
+                source_turn_id: "turn-1",
+                target_memory_id: null,
+                base_version: null,
+                memory: CARD,
+              },
+            ],
+          },
+    );
+  });
   const configuration = createModelConfiguration(
     "https://model.example/v1",
     "candidate-model",

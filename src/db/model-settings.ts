@@ -28,6 +28,11 @@ export class ModelSettingsStore {
       this.put("verified_model_origin", "");
       this.put("verified_model_name", "");
       this.put("verified_refiner_model_name", "");
+      this.core.db
+        .prepare(
+          "DELETE FROM settings WHERE key IN ('model_usage_date','model_usage_count')",
+        )
+        .run();
     });
   }
 
@@ -70,18 +75,6 @@ export class ModelSettingsStore {
 
   pauseExtraction(): void {
     this.core.setSetting("auto_extract", "false");
-  }
-
-  reserveAttempt(limit: number): boolean {
-    return this.core.transaction(() => {
-      const date = new Date().toISOString().slice(0, 10);
-      const storedDate = this.value("model_usage_date");
-      const count = storedDate === date ? Number(this.value("model_usage_count")) : 0;
-      if (!Number.isFinite(count) || count >= limit) return false;
-      this.put("model_usage_date", date);
-      this.put("model_usage_count", String(count + 1));
-      return true;
-    });
   }
 
   recordFailure(code: string): void {

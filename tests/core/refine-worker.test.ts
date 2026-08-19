@@ -23,12 +23,8 @@ function response(value: unknown, status = 200): Response {
   );
 }
 
-function sessionClient(
-  database: MemoryDatabase,
-  gate: unknown,
-  refiner: unknown,
-): SessionRefineClient {
-  return new SessionRefineClient(database.modelSettings, async (_url, init) => {
+function sessionClient(gate: unknown, refiner: unknown): SessionRefineClient {
+  return new SessionRefineClient(async (_url, init) => {
     const body = JSON.parse(String(init?.body)) as {
       response_format: { json_schema: { name: string } };
     };
@@ -73,7 +69,7 @@ test("P0-03/P0-14 worker projects allowed fields, extracts without a correction 
   );
   assert.ok(queued.jobId);
   let requestBody = "";
-  const client = new StrictModelClient(database.modelSettings, async (_url, init) => {
+  const client = new StrictModelClient(async (_url, init) => {
     requestBody = String(init?.body);
     return response({
       action: "create",
@@ -92,7 +88,6 @@ test("P0-03/P0-14 worker projects allowed fields, extracts without a correction 
     new MemoryKeyProvider("test-key"),
     client,
     sessionClient(
-      database,
       { should_refine: true, candidate_turn_ids: ["turn-target"] },
       {
         edits: [
@@ -185,18 +180,14 @@ test("failed strict Schema connection test cannot enable auto_extract", async ()
   const root = await mkdtemp(join(tmpdir(), "clm-manager-"));
   const database = new MemoryDatabase(join(root, "memory.sqlite"));
   const keyProvider = new MemoryKeyProvider();
-  const client = new StrictModelClient(database.modelSettings, async () =>
+  const client = new StrictModelClient(async () =>
     response({ message: "ordinary JSON only" }, 400),
   );
   const manager = new ModelManager(
     database,
     keyProvider,
     client,
-    sessionClient(
-      database,
-      { should_refine: false, candidate_turn_ids: [] },
-      { edits: [] },
-    ),
+    sessionClient({ should_refine: false, candidate_turn_ids: [] }, { edits: [] }),
   );
   try {
     await manager.configure(
@@ -219,9 +210,13 @@ test("model reconfiguration can reuse an existing Keychain secret", async () => 
   const keyProvider = new MemoryKeyProvider("stored-key");
   const manager = new ModelManager(database, keyProvider);
   try {
+    database.setSetting("model_usage_date", "2026-08-19");
+    database.setSetting("model_usage_count", "100");
     await manager.configure("https://model.example/v1", "stored-key-model", null);
     assert.equal(await keyProvider.get(), "stored-key");
     assert.equal(database.modelSettings.getConfiguration()?.model, "stored-key-model");
+    assert.equal(database.getSetting("model_usage_date"), null);
+    assert.equal(database.getSetting("model_usage_count"), null);
   } finally {
     database.close();
   }
@@ -231,7 +226,7 @@ test("single auto-extract control bundles required consent and can turn it off",
   const root = await mkdtemp(join(tmpdir(), "clm-manager-"));
   const database = new MemoryDatabase(join(root, "memory.sqlite"));
   const keyProvider = new MemoryKeyProvider();
-  const client = new StrictModelClient(database.modelSettings, async () =>
+  const client = new StrictModelClient(async () =>
     response({
       action: "skip",
       target_memory_id: null,
@@ -243,11 +238,7 @@ test("single auto-extract control bundles required consent and can turn it off",
     database,
     keyProvider,
     client,
-    sessionClient(
-      database,
-      { should_refine: false, candidate_turn_ids: [] },
-      { edits: [] },
-    ),
+    sessionClient({ should_refine: false, candidate_turn_ids: [] }, { edits: [] }),
   );
   try {
     await manager.configure("https://model.example/v1", "strict-model", "test-key");

@@ -378,7 +378,7 @@ OUT: additionalContext 纯文本（0～3 条「标题：以后怎么做」）或
 - **Prime：** 记忆已经是 system prompt 里的字符串。对话模型读拼接结果，**没有**「拼完再专打一次检索模型」。`/refine` 是另一次后台 LLM，输入是轨迹，不是拼接后的用户句。
 - **MemoraX：** UserPromptSubmit 把当前 `prompt` POST 给本机 Backend（`/memory/turn-start`，超时可到 12s），Backend 可返回 `additionalContext`；Hook 再拼进 Codex。默认自动检索关，开了也是检索结果直接拼，不是把拼好的全文再生成一遍。写回在 Stop 后另走 `/memory/writeback`。真正带正文的召回常常是同一轮对话模型去调 `$memorax-code` / `search`（工具轮），不是 Sidecar 再开一个抽取模型。
 
-我们应该怎么做：每个完成 Turn，候选抽取 **0、1 或最多 2 次**（2 次仅当 `need_prev_turn`）；每 25 个 staged 候选或 compact 运行一次 Gate，Gate 通过再运行一次 Refiner。每个逻辑请求的 429/5xx 最多一次有界传输重试并计入每日限额。每个 UserPromptSubmit 生成模型 **0 次**。候选和 Gate 结果不可召回；只有 Refiner Apply 后 active 可见。
+我们应该怎么做：每个完成 Turn，候选抽取 **0、1 或最多 2 次**（2 次仅当 `need_prev_turn`）；每 25 个 staged 候选或 compact 运行一次 Gate，Gate 通过再运行一次 Refiner。每个逻辑请求的 429/5xx 最多一次有界传输重试；产品不设置每日模型请求次数上限，由幂等、单仓并发锁、有界重试和供应商账户限额防失控。每个 UserPromptSubmit 生成模型 **0 次**。候选和 Gate 结果不可召回；只有 Refiner Apply 后 active 可见。
 
 ### 3.9 安装到 Codex
 
@@ -493,8 +493,7 @@ memory: active → superseded | archived | deleted
   "max_input_chars": 12000,
   "max_output_tokens": 1000,
   "max_response_bytes": 65536,
-  "max_retries": 1,
-  "daily_extract_limit": 100
+  "max_retries": 1
 }
 ```
 
@@ -583,7 +582,7 @@ API Key 通过 Sidecar 写入 macOS Keychain service `codex-local-memory`、acco
 - 覆盖事务前后、job enqueue、FTS、硬删除和备份崩溃点。
 - DB 迁移带 schema version，失败不覆盖原库。
 - 设置 DB 大小、保留期、job 重试和 dead-letter 上限。
-- 模型只按 `Retry-After` 有界重试 429/5xx；重试也计入每日限额。
+- 模型只按 `Retry-After` 有界重试 429/5xx；产品不另设每日请求次数上限。
 - 安装时展示三个 Hook 命令；禁止绕过 Hook trust。
 
 ## 8. 实施顺序

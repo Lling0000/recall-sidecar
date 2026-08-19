@@ -20,9 +20,8 @@ export class ModelManager {
     client?: StrictModelClient,
     sessionClient?: SessionRefineClient,
   ) {
-    this.client = client ?? new StrictModelClient(this.database.modelSettings);
-    this.sessionClient =
-      sessionClient ?? new SessionRefineClient(this.database.modelSettings);
+    this.client = client ?? new StrictModelClient();
+    this.sessionClient = sessionClient ?? new SessionRefineClient();
   }
 
   async configure(

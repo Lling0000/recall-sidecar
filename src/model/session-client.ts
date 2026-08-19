@@ -1,4 +1,4 @@
-import { type AttemptBudget, ModelError } from "./client.js";
+import { ModelError } from "./client.js";
 import { chatCompletionsUrl } from "./configuration.js";
 import {
   GATE_MAX_INPUT_CHARS,
@@ -28,10 +28,7 @@ type FetchImplementation = (
 ) => Promise<Response>;
 
 export class SessionRefineClient {
-  constructor(
-    private readonly budget: AttemptBudget,
-    private readonly fetchImplementation: FetchImplementation = fetch,
-  ) {}
+  constructor(private readonly fetchImplementation: FetchImplementation = fetch) {}
 
   async gate(
     configuration: ModelConfiguration,
@@ -90,9 +87,6 @@ export class SessionRefineClient {
     }
     let attempts = 0;
     for (let index = 0; index <= configuration.max_retries; index += 1) {
-      if (!this.budget.reserveAttempt(configuration.daily_extract_limit)) {
-        throw new ModelError("daily_extract_limit_reached");
-      }
       attempts += 1;
       const response = await this.request(
         endpoint,

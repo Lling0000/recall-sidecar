@@ -26,7 +26,6 @@ export function createModelConfiguration(
     max_output_tokens: 1_000,
     max_response_bytes: 65_536,
     max_retries: 1,
-    daily_extract_limit: 100,
   };
 }
 

@@ -105,7 +105,7 @@ Schema 通过后执行 action 语义校验：
 - `update`：target 为本次同 repo 对照集 ID，base 为其正整数版本，memory 为合法对象。
 - `skip` / `reject` / `need_prev_turn`：target/base/memory 全为 `null`。
 
-逐轮对照集只取本仓 active 记忆，用本轮用户句（已带上一轮时用两句）FTS，最多 8 条。`need_prev_turn` 最多触发一次追加上一轮后的逻辑重试；已带过仍返回该 action 时当 skip。每个完成 Turn 逻辑抽取 0、1 或最多 2 次并只生成候选；第 25 个 staged 候选或 `compact` 触发一次 Gate，Gate 通过再运行一次 Refiner。不得 polish 或解析 repair。429/5xx 的一次有界传输重试必须计入每日限额。
+逐轮对照集只取本仓 active 记忆，用本轮用户句（已带上一轮时用两句）FTS，最多 8 条。`need_prev_turn` 最多触发一次追加上一轮后的逻辑重试；已带过仍返回该 action 时当 skip。每个完成 Turn 逻辑抽取 0、1 或最多 2 次并只生成候选；第 25 个 staged 候选或 `compact` 触发一次 Gate，Gate 通过再运行一次 Refiner。不得 polish 或解析 repair。429/5xx 只允许一次有界传输重试；产品不设置每日模型请求次数上限。
 
 Refiner Apply 使用 `BEGIN IMMEDIATE`。提交前重读所有目标并校验 `base_version`、tombstone、repo 与来源 turn；任何失败整体回滚。过期结果不生效，等待后续检查点重新读取，不覆盖人工动作。active 只在 Refiner 事务提交后可见；逐轮候选、Gate 和 Hook 都不写 memory/FTS。
 

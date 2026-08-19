@@ -115,7 +115,7 @@ test("P0-06 simulated write failure is contained by Sidecar", async () => {
 
 test("P0-08 model transport contacts only the configured exact Origin", async () => {
   const urls: string[] = [];
-  const client = new StrictModelClient({ reserveAttempt: () => true }, async (url) => {
+  const client = new StrictModelClient(async (url) => {
     urls.push(String(url));
     return modelResponse({
       action: "skip",
