@@ -16,8 +16,8 @@
 
 ## 验证结果
 
-- P0-01 至 P0-24：全部通过，核心测试 40/40。
-- Docker 核心：固定 Node 24.15.0 镜像内 typecheck、lint、结构检查、40 个核心测试、文档一致性和 build 全部通过。
+- P0-01 至 P0-24：全部通过，核心测试 41/41。
+- Docker 核心：固定 Node 24.15.0 镜像内 typecheck、lint、结构检查、41 个核心测试、文档一致性和 build 全部通过。
 - macOS 宿主：3/3，通过真实 Keychain、Unix socket/权限、plugin、launchd、dashboard。
 - Codex plugin validator：通过。
 - Codex CLI：`codex-local-memory@codex-local-memory-local` 为 `installed, enabled`。
