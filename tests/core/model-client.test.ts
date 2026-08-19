@@ -33,14 +33,19 @@ const SKIP = {
   memory: null,
 };
 
-test("model URL policy requires HTTPS except explicit loopback mode", () => {
-  assert.throws(() => validateBaseUrl("http://model.example/v1", false));
-  assert.throws(() => validateBaseUrl("http://127.0.0.1:8080/v1", false));
+test("model URL policy requires HTTPS, including for loopback hosts", () => {
+  assert.throws(() => validateBaseUrl("http://model.example/v1"));
+  assert.throws(() => validateBaseUrl("http://127.0.0.1:8080/v1"));
   assert.equal(
-    validateBaseUrl("http://127.0.0.1:8080/v1", true).origin,
-    "http://127.0.0.1:8080",
+    validateBaseUrl("https://127.0.0.1:8443/v1").origin,
+    "https://127.0.0.1:8443",
   );
-  assert.throws(() => validateBaseUrl("https://user:pass@example.test/v1", false));
+  assert.throws(() => validateBaseUrl("https://user:pass@example.test/v1"));
+  assert.equal(
+    "allow_loopback_http" in
+      createModelConfiguration("https://model.example/v1", "extract-model"),
+    false,
+  );
 });
 
 test("P0-03 strict request redacts secrets but preserves ordinary paths", async () => {

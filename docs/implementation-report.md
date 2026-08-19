@@ -16,8 +16,8 @@
 
 ## 验证结果
 
-- P0-01 至 P0-24：全部通过，核心测试 41/41。
-- Docker 核心：固定 Node 24.15.0 镜像内 typecheck、lint、结构检查、41 个核心测试、文档一致性和 build 全部通过。
+- P0-01 至 P0-24：全部通过，核心测试 42/42。
+- Docker 核心：固定 Node 24.15.0 镜像内 typecheck、lint、结构检查、42 个核心测试、文档一致性和 build 全部通过。
 - macOS 宿主：3/3，通过真实 Keychain、Unix socket/权限、plugin、launchd、dashboard。
 - Codex plugin validator：通过。
 - Codex CLI：`codex-local-memory@codex-local-memory-local` 为 `installed, enabled`。
@@ -37,6 +37,6 @@
 ## 已知限制
 
 - 只白名单支持 Codex CLI `0.148.0-alpha.9`；其他完整版本会安全跳过抽取并告警。
-- 已对用户指定的远程供应商执行最小连接与两轮纠偏测试；免费模型未通过，`gpt-5.4` 通过并已启用。更换 Origin、模型或撤回 Prompt/最终回答同意时，`auto_extract` 会再次关闭并要求重新验证。
+- 已对用户指定的远程供应商执行最小连接与两轮纠偏测试；免费模型未通过，`gpt-5.4` 通过并已启用。更换 Origin 或模型会关闭 `auto_extract` 并要求重新验证；关闭唯一自动抽取开关会同时撤回 Prompt 与最终回答外发同意。
 - 看板固定使用 `127.0.0.1:43127`；端口被其他进程占用时 Sidecar 会失败并由 Hook fail-open。
 - Docker Hub 认证端点两次超时后，从 DaoCloud 代理取得同一固定 Node 镜像，最终使用 digest `sha256:4e6b70dd6cbfc88c8157ba19aa3d9f9cce6ba4703576d55459e45efcbc9c5f5d` 完成验收。

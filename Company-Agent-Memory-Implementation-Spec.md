@@ -207,7 +207,7 @@ Apply 执行一个 `BEGIN IMMEDIATE`：Schema/外发遮蔽/投影检查、重读
 ### 3.6 自动化开关
 
 - `auto_recall`：默认开。UserPromptSubmit 按当前 Prompt 在本仓库 FTS 召回并自动注入，不靠 Agent 再搜。
-- `auto_extract`：严格 Schema 连接测试成功、并展示一次将外发字段后自动打开。打开后由后台 job 抽取，Apply 事务提交即生效；Hook 不等待模型。
+- `auto_extract`：保存模型配置时自动执行严格 Schema 连接测试；通过后由用户使用唯一的自动抽取开关开启。开启即捆绑同意外发本轮 Prompt 与最终回答，关闭即同时撤回两项同意并停止抽取。打开后由后台 job 抽取，Apply 事务提交即生效；Hook 不等待模型。
 - 有用户句的完成 Turn **直接抽**（3.7）；`skip` / `reject` 由抽取模型输出，不另跑门控模型。
 - 同一仓库同时只运行一个 refine job。
 
@@ -373,7 +373,7 @@ MemoraX 怎么装：
 
 1. 安装脚本探测 Codex，记录完整 CLI 版本并验证对应 rollout fixture；首个白名单版本为 `0.148.0-alpha.9`。随后写入 plugin（`SessionStart` / `UserPromptSubmit` / `Stop`），并安装 launchd KeepAlive。
 2. 提示：`/plugins` 启用、`/hooks` trust、重启 Codex。禁止文档里教 `--dangerously-bypass-hook-trust`。
-3. 打开本机看板：填 Base URL、模型、API Key → 使用正式 Schema 验证严格 `json_schema`、连接成功并预览外发字段 → `auto_extract` 打开。
+3. 打开本机看板：填 HTTPS Base URL、模型、API Key → 「保存并测试」使用正式 Schema 验证严格 `json_schema` → 阅读固定外发说明并开启唯一的 `auto_extract` 开关。
 4. 卸载脚本：停 launchd、禁用 plugin、不默认删库。
 
 Hook 命令用 plugin 的 `$PLUGIN_ROOT` 调本地 CLI，只把 cwd/session/turn 经 Unix socket 交给 Sidecar；与 MemoraX 互斥，安装时检测并拒绝并行启用。
@@ -490,11 +490,11 @@ memory: active → superseded | archived | deleted
 
 该记录只用于开发环境连通性复测，不把 TeamoRouter 或该模型设为产品默认供应商。凭据不得写入本文件、仓库、日志、环境变量或命令参数，必须通过关闭回显的 Keychain 交互写入；任何曾粘贴到聊天正文的 Key 都应先轮换。单次连接样例成功不足以开启自动抽取；还必须用真实 create / update / skip 样例稳定通过 Schema 与 action 语义校验，才可把验证状态改为“通过”。
 
-功能：填写 Base URL、模型、API Key；用 3.7 的正式 Schema 测试严格 `json_schema`；确认抽取外发字段；预览实际发送的密钥遮蔽后内容；暂停模型；查看调用失败。不支持严格 Schema 时连接测试失败，`auto_extract` 保持关闭。
+功能：填写 HTTPS Base URL、模型、API Key；「保存并测试」用 3.7 的正式 Schema 测试严格 `json_schema`；固定展示抽取外发说明；用一个动态按钮开启或关闭自动抽取；查看调用失败。不支持严格 Schema 时保存后的测试失败，`auto_extract` 保持关闭。
 
-API Key 通过 Sidecar 写入 macOS Keychain service `codex-local-memory`、account `extract-api-key`，不返回给看板或备份；更换供应商时删除旧 Key。Base URL 默认只接受 HTTPS，精确锁定 scheme/host/port，禁止 userinfo、跨 Origin redirect、关闭 TLS 校验或重定向后转发 Authorization；本地模型需单独开启 loopback 模式。
+API Key 通过 Sidecar 写入 macOS Keychain service `codex-local-memory`、account `extract-api-key`，不返回给看板或备份；更换供应商时删除旧 Key。Base URL 只接受 HTTPS，精确锁定 scheme/host/port，禁止 userinfo、HTTP loopback 本地模型、跨 Origin redirect、关闭 TLS 校验或重定向后转发 Authorization。
 
-请求只包含用户已确认并预览过、且已遮蔽密钥类内容的字段（本轮 Prompt / 最终回答，以及符合 3.3 的上一轮用户句），外加对照用的已有记忆卡片（id、version、四个固定字段）。本轮 Prompt 与最终回答是启用 `auto_extract` 的必选字段；用户撤回任一项同意时自动关闭抽取。上一轮用户句只在 3.7 指代流程触发时发送。不含 cwd、remote、session ID、turn ID、reasoning 或工具输出，并记录同意时间和目标 Origin。响应必须通过严格 Structured Output 和 action 语义校验；超限、额外字段或解析失败直接失败，不调用模型 repair。远程供应商可能保留请求，本机硬删除无法删除供应商副本。
+请求只包含已遮蔽密钥类内容的字段（本轮 Prompt / 最终回答，以及符合 3.3 的上一轮用户句），外加对照用的已有记忆卡片（id、version、四个固定字段）。看板在唯一开关旁固定展示外发说明；开启 `auto_extract` 即捆绑同意外发本轮 Prompt 与最终回答，关闭即同时撤回两项同意。本轮 Prompt 与最终回答缺一不可。上一轮用户句只在 3.7 指代流程触发时发送。不含 cwd、remote、session ID、turn ID、reasoning 或工具输出，并记录开关时间和目标 Origin。响应必须通过严格 Structured Output 和 action 语义校验；超限、额外字段或解析失败直接失败，不调用模型 repair。远程供应商可能保留请求，本机硬删除无法删除供应商副本。
 
 ## 6. 本地看板
 
@@ -502,7 +502,7 @@ API Key 通过 Sidecar 写入 macOS Keychain service `codex-local-memory`、acco
 
 - 待核对：已生效的覆盖；旧/新并排；没问题或恢复旧版。
 - 记忆：搜索、按仓库/文件夹过滤、版本、回滚、归档、硬删除；显示来源 session/turn，复制 `codex resume <session_id>`。
-- 模型：Base URL、抽取模型、Key、连接测试、外发字段预览、暂停、失败记录。
+- 模型：HTTPS Base URL、抽取模型、Key、「保存并测试」、固定外发说明、单一自动抽取开关、失败记录。
 - 健康：Hook、Sidecar、SQLite、模型、CLI/schema 白名单、失败与 stale 计数、抽取 skip/reject/create/update 计数。
 
 首版不做独立首页、设置页或导出能力，不提供手工创建、手工编辑正文或合并仓库。暂停采集和清空放在记忆/仓库列表的菜单里。来源会话由 Codex 自己保存；本产品不复制会话正文。原会话存在时复制 `codex resume <session_id>`，已被用户删除时显示“原会话不可用”。首版不依赖未公开的 `codex://` 深链，也不承诺直接定位到 turn 内的滚动位置。
@@ -534,7 +534,7 @@ API Key 通过 Sidecar 写入 macOS Keychain service `codex-local-memory`、acco
 | P0-05 | 删除同时运行 refine/FTS job。 | 记忆不复活，查询为零。 |
 | P0-06 | 停止 Sidecar、锁 DB、模拟满盘。 | Codex 继续，看板显示失败。 |
 | P0-07 | 重复发送同一 SessionStart 和 Stop。 | 只建一个 session 绑定、只关闭一次 Turn、生成一个 job。 |
-| P0-08 | 配置模型后审计网络。 | 只访问 loopback和已允许的模型地址。 |
+| P0-08 | 配置模型后审计网络，并尝试 HTTP loopback 模型地址。 | 只访问本机看板/IPC 和已允许的 HTTPS 模型 Origin；HTTP loopback 模型配置被拒绝。 |
 | P0-09 | 扫描 DB、日志、进程环境。 | 不含模型 API Key。 |
 | P0-10 | 修改仓库 remote 冒充另一仓库。 | repo_id 不变且产生告警。 |
 | P0-11 | 模型地址重定向到另一 Origin。 | 请求被拒绝且 Key 不转发。 |
@@ -544,7 +544,7 @@ API Key 通过 Sidecar 写入 macOS Keychain service `codex-local-memory`、acco
 | P0-17 | 同一 Git 建 worktree，并另做一份同名独立 clone。 | worktree 共享 `repo_id`；独立 clone 隔离。 |
 | P0-18 | 两个无 Git 同名目录写不同 canary，再移动其中一个目录。 | 同名路径隔离；移动后的目录得到新 `repo_id`，不自动迁移旧记忆。 |
 | P0-19 | 已绑定 folder session 的 `cwd` 先进入根内子目录，再切到另一仓库。 | 根内子目录仍正常召回；跨出绑定根后当前轮不召回、不写回，不修改 session 的 `repo_id`。 |
-| P0-20 | 模型支持普通 JSON 但不支持正式 strict Schema。 | 连接测试失败，`auto_extract` 不开启，无 fallback/repair 请求。 |
+| P0-20 | 「保存并测试」遇到仅支持普通 JSON、不支持正式 strict Schema 的模型。 | 测试失败，唯一自动抽取开关不可开启，无 fallback/repair 请求。 |
 | P0-21 | 在看板查看来源，随后删除原 Codex 会话。 | 存在时复制正确的 `codex resume <session_id>`；删除后安全提示不可用，记忆不受影响。 |
 | P0-22 | 使用未在完整版本 + fixture 白名单中的 Codex CLI。 | 本轮不抽取，健康页告警；不得猜测 rollout 字段。 |
 | P0-23 | 模型调用期间人工回滚导致 `base_version` 变化。 | candidate 为 `stale`，不生效、不重跑、不覆盖人工动作。 |
@@ -583,7 +583,7 @@ API Key 通过 Sidecar 写入 macOS Keychain service `codex-local-memory`、acco
 - 存储：一台机器一套 SQLite，四字段按 `repo_id` 落库；不保存 Prompt/最终回答正文。拼接是 Sidecar 模板，不是 Agent。
 - 生效：后台抽取不阻塞 Hook；只有 Apply 事务提交后的 active 版本可召回。过期 `base_version` 记为 stale，不生效、不重跑。
 - 模型次数：完成 Turn 逻辑抽取 0、1 或因 `need_prev_turn` 最多 2 次；UserPromptSubmit 生成模型 0 次；不二次 polish、不解析 repair。
-- 填好 Key：使用正式 Schema 验证 strict `json_schema`、连接成功并预览外发字段后打开 `auto_extract`。
+- 填好 Key：「保存并测试」使用正式 Schema 验证 strict `json_schema`；通过后阅读固定外发说明，用唯一开关打开 `auto_extract`。
 - 首版看板：待核对、记忆、模型、健康；不做首页、设置、导出、手工创建/编辑正文或仓库合并。来源只保存 session/turn 引用并复制 `codex resume <session_id>`。
 - 安装：Codex plugin（对标 MemoraX 适配器）+ launchd Sidecar；`/hooks` trust；互斥 MemoraX。
 

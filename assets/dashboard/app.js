@@ -237,48 +237,49 @@ async function showVersions(wrapper, memory) {
   wrapper.append(panel);
 }
 async function renderModel() {
-  setPage("model", "抽取模型", "只有通过正式 strict json_schema 连接测试后，自动抽取才可以开启。");
+  setPage("model", "抽取模型", "配置 HTTPS 模型服务，并控制是否自动抽取记忆。");
   const data = await api("/api/model");
   const stack = element("div", undefined, "settings-stack");
   const configuration = element("section", undefined, "settings-group");
-  configuration.append(element("h2", "连接配置"), element("p", "API Key 只保存在 macOS Keychain。", "muted"));
+  configuration.append(element("h2", "连接配置"), element("p", "只接受 HTTPS 模型地址。API Key 仅保存在 macOS Keychain；保存后会使用正式 Schema 验证一次。", "muted"));
   const form = element("div", undefined, "form-grid");
   const base = inputWithValue(data.configuration?.base_url || "", "https://example.com/v1");
   const model = inputWithValue(data.configuration?.model || "", "抽取模型名称");
   const key = inputWithValue("", "API Key（不会回显）");
   key.type = "password";
-  const loopback = document.createElement("input");
-  loopback.type = "checkbox";
-  loopback.checked = data.configuration?.allow_loopback_http === true;
-  form.append(labelNode("Base URL", base), labelNode("模型", model), labelNode("API Key", key), checkNode("允许 HTTP loopback 本地模型", loopback));
-  configuration.append(form, actionButton("保存配置", "primary", async () => {
-    await api("/api/model/configure", {
-      method: "POST",
-      body: JSON.stringify({ base_url: base.value, model: model.value, api_key: key.value, allow_loopback_http: loopback.checked }),
-    });
-    await renderModel();
-  }, "floppy-disk"));
-  const automation = element("section", undefined, "settings-group");
-  automation.append(element("h2", "严格 Schema 与外发同意"), element("p", `连接测试：${data.strict_schema_verified ? "已通过" : "未通过"} · auto_extract：${data.auto_extract ? "开启" : "关闭"}`, "muted"));
-  const promptConsent = checkbox(data.prompt_consent);
-  const answerConsent = checkbox(data.final_answer_consent);
-  automation.append(checkNode("外发本轮 Prompt", promptConsent), checkNode("外发最终回答", answerConsent));
-  const actions = element("div", undefined, "actions");
-  actions.append(
-    actionButton("连接测试", "secondary", async () => {
-      const result = await api("/api/model/test", { method: "POST", body: "{}" });
-      automation.append(element("pre", JSON.stringify(result.request_preview, null, 2), "code-preview"));
-      status.textContent = "正式 Schema 连接测试通过";
-    }, "plugs-connected"),
-    actionButton("开启自动抽取", "primary", async () => {
-      await api("/api/model/enable", { method: "POST", body: JSON.stringify({ prompt_consent: promptConsent.checked, final_answer_consent: answerConsent.checked }) });
+  form.append(labelNode("Base URL", base), labelNode("模型", model), labelNode("API Key", key));
+  configuration.append(form, actionButton("保存并测试", "primary", async () => {
+    try {
+      await api("/api/model/configure", {
+        method: "POST",
+        body: JSON.stringify({ base_url: base.value, model: model.value, api_key: key.value }),
+      });
+      await api("/api/model/test", { method: "POST", body: "{}" });
       await renderModel();
-    }, "play"),
-    actionButton("暂停", "secondary", async () => {
+      status.textContent = "配置已保存，正式 Schema 验证通过";
+    } catch (error) {
+      await renderModel();
+      showError(error);
+    }
+  }));
+  const automation = element("section", undefined, "settings-group");
+  automation.append(
+    element("h2", "自动抽取"),
+    element("p", `模型验证：${data.strict_schema_verified ? "已通过" : "未通过"} · 当前状态：${data.auto_extract ? "已开启" : "已关闭"}`, "muted"),
+    element("p", "开启即代表同意将本轮 Prompt 和最终回答发送到当前 HTTPS 模型服务用于抽取；原文只在任务内存中使用，不写入本地数据库或日志。", "muted"),
+  );
+  const actions = element("div", undefined, "actions");
+  const toggle = data.auto_extract
+    ? actionButton("关闭自动抽取", "secondary", async () => {
       await api("/api/model/pause", { method: "POST", body: "{}" });
       await renderModel();
-    }, "pause"),
-  );
+    })
+    : actionButton("开启自动抽取", "primary", async () => {
+      await api("/api/model/enable", { method: "POST", body: "{}" });
+      await renderModel();
+    });
+  toggle.disabled = !data.auto_extract && !data.strict_schema_verified;
+  actions.append(toggle);
   automation.append(actions);
   if (data.last_error) automation.append(element("p", `最近失败：${data.last_error}`, "error"));
   stack.append(configuration, automation);
@@ -302,20 +303,9 @@ function inputWithValue(value, placeholder) {
   input.placeholder = placeholder;
   return input;
 }
-function checkbox(checked) {
-  const input = document.createElement("input");
-  input.type = "checkbox";
-  input.checked = checked;
-  return input;
-}
 function labelNode(text, input) {
   const label = element("label");
   label.append(element("span", text), input);
-  return label;
-}
-function checkNode(text, input) {
-  const label = element("label", undefined, "check");
-  label.append(input, document.createTextNode(text));
   return label;
 }
 const renderers = { reviews: renderReviews, memories: renderMemories, model: renderModel, health: renderHealth };

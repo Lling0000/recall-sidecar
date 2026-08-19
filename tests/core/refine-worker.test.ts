@@ -106,7 +106,7 @@ test("failed strict Schema connection test cannot enable auto_extract", async ()
     );
     await assert.rejects(manager.testConnection());
     assert.equal(database.extractionEnabled(), false);
-    assert.throws(() => manager.enable(true, true));
+    assert.throws(() => manager.enable());
     assert.equal(database.extractionEnabled(), false);
   } finally {
     database.close();
@@ -122,6 +122,36 @@ test("model reconfiguration can reuse an existing Keychain secret", async () => 
     await manager.configure("https://model.example/v1", "stored-key-model", null);
     assert.equal(await keyProvider.get(), "stored-key");
     assert.equal(database.modelSettings.getConfiguration()?.model, "stored-key-model");
+  } finally {
+    database.close();
+  }
+});
+
+test("single auto-extract control bundles required consent and can turn it off", async () => {
+  const root = await mkdtemp(join(tmpdir(), "clm-manager-"));
+  const database = new MemoryDatabase(join(root, "memory.sqlite"));
+  const keyProvider = new MemoryKeyProvider();
+  const client = new StrictModelClient(database.modelSettings, async () =>
+    response({
+      action: "skip",
+      target_memory_id: null,
+      base_version: null,
+      memory: null,
+    }),
+  );
+  const manager = new ModelManager(database, keyProvider, client);
+  try {
+    await manager.configure("https://model.example/v1", "strict-model", "test-key");
+    await manager.testConnection();
+    manager.enable();
+    assert.equal(database.extractionEnabled(), true);
+    assert.equal(database.getSetting("prompt_consent"), "true");
+    assert.equal(database.getSetting("final_answer_consent"), "true");
+
+    manager.pause();
+    assert.equal(database.extractionEnabled(), false);
+    assert.equal(database.getSetting("prompt_consent"), "false");
+    assert.equal(database.getSetting("final_answer_consent"), "false");
   } finally {
     database.close();
   }

@@ -125,9 +125,6 @@ input {
   min-width: 0; width: 100%; border: 1px solid var(--line-strong); border-radius: 9px;
   padding: 11px 13px; background: var(--surface); color: #222;
 }
-label.check { display: flex; align-items: center; gap: 9px; margin: 12px 0; color: #3c3c39; font-size: 14px; }
-label.check input { width: 16px; min-width: 16px; accent-color: #222; }
-
 .primary, .secondary, .danger-button {
   border-radius: 9px; padding: 10px 15px; font-size: 13px; font-weight: 560;
 }
@@ -136,8 +133,8 @@ label.check input { width: 16px; min-width: 16px; accent-color: #222; }
 .secondary { border: 1px solid var(--line-strong); background: transparent; color: #292927; }
 .secondary:hover { background: var(--soft); }
 .danger-button { border: 1px solid #dbc8c4; background: transparent; color: var(--danger); }
+.primary:disabled, .secondary:disabled { opacity: .45; cursor: not-allowed; }
 .actions { margin-top: 20px; flex-wrap: wrap; }
-.code-preview { padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: #f2f2ef; color: #333; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 .health-list { border-top: 1px solid var(--line-strong); margin-top: 18px; }
 .health-row { display: grid; grid-template-columns: 26px minmax(180px, .7fr) 1.5fr; gap: 14px; align-items: start; padding: 17px 2px; border-bottom: 1px solid var(--line); }
@@ -178,4 +175,3 @@ label.check input { width: 16px; min-width: 16px; accent-color: #222; }
   .health-row { grid-template-columns: 24px 1fr; }
   .health-value { grid-column: 2; }
 }
-

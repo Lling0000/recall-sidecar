@@ -11,7 +11,6 @@ export interface ModelConfiguration {
   max_response_bytes: number;
   max_retries: 1;
   daily_extract_limit: number;
-  allow_loopback_http: boolean;
 }
 
 export interface ExtractionInput {

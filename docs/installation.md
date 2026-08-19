@@ -23,7 +23,7 @@ node dist/cli.js install
 node "$HOME/Library/Application Support/codex-local-memory/runtime/cli.js" dashboard url
 ```
 
-命令返回含一次性 URL fragment 的 loopback 地址。看板只有待核对、记忆、模型、健康四页。模型页填写 HTTPS Base URL、模型和 API Key；Key 只进入 macOS Keychain。正式 Schema 连接测试通过、预览外发字段并同时同意外发本轮 Prompt 与最终回答后，才能开启 `auto_extract`。
+命令返回含一次性 URL fragment 的本机看板地址。看板只有待核对、记忆、模型、健康四页。模型页填写 HTTPS Base URL、模型和 API Key；Key 只进入 macOS Keychain，不支持 HTTP loopback 本地模型。点击「保存并测试」会用正式 Schema 验证模型；通过后，唯一的自动抽取开关用于同时同意或撤回本轮 Prompt 与最终回答外发。
 
 卸载：
 
@@ -32,4 +32,3 @@ node "$HOME/Library/Application Support/codex-local-memory/runtime/cli.js" unins
 ```
 
 卸载会停止 launchd、移除 plugin 与 runtime，但默认保留数据库和 Keychain 配置，便于重新安装。正式数据不写入源码仓库或业务仓库。
-

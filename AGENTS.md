@@ -65,11 +65,11 @@
 - 上一轮用户句：仅 3.7 指代流程需要时，对前一个完整窗口重复用户 Prompt 规则。
 - 子代理不抽：`thread_source != "user"`、source 为 subagent 或存在 `inter_agent_communication_metadata`。
 
-Prompt 和最终回答只在 job 内存中存在，也是启用 `auto_extract` 的必选外发字段；用户撤回任一项同意时自动关闭抽取。外发前仅遮蔽 PAT、JWT、PEM 和高熵密钥；普通文本、路径和文件夹名不处理。DB、WAL、备份、FTS 和日志禁止保存 Prompt/回答正文。只可保存 session/turn 引用、不可逆投影摘要、状态、错误元数据和四字段记忆卡；重试重新读取同一 rollout，文件不可用则失败。
+Prompt 和最终回答只在 job 内存中存在，也是启用 `auto_extract` 的捆绑必选外发字段。看板只提供一个自动抽取开关：开启即同时记录两项同意，关闭即同时撤回并停止抽取，不提供两项独立复选框。外发前仅遮蔽 PAT、JWT、PEM 和高熵密钥；普通文本、路径和文件夹名不处理。DB、WAL、备份、FTS 和日志禁止保存 Prompt/回答正文。只可保存 session/turn 引用、不可逆投影摘要、状态、错误元数据和四字段记忆卡；重试重新读取同一 rollout，文件不可用则失败。
 
 ## 抽取模型合同
 
-连接测试必须使用正式 Schema 验证模型支持严格 `json_schema`；不支持时 `auto_extract` 保持关闭。Schema 必须等价于：
+模型 Base URL 只接受 HTTPS，必须使用 API Key，不支持 HTTP loopback 本地模型。保存模型配置时必须立即使用正式 Schema 做一次连接测试；UI 可合并为“保存并测试”，但不允许绕过验证。不支持严格 `json_schema` 时 `auto_extract` 保持关闭。Schema 必须等价于：
 
 ```json
 {
@@ -128,7 +128,7 @@ Hook → Sidecar 使用 Unix socket 和一行一个 JSON 请求。UserPromptSubm
 ## 看板与来源
 
 - 四页：待核对、记忆、模型、健康。
-- 允许：确认、回滚、归档、硬删除、暂停、模型配置和健康查看。
+- 允许：确认、回滚、归档、硬删除、仓库暂停、模型配置、单一自动抽取开关和健康查看。
 - 禁止：手工创建/编辑正文、导出、repo 合并。
 - 来源只保存 `client/session_id/turn_id/time` 等引用，不复制 Codex 会话正文。
 - 来源操作只复制 `codex resume <session_id>`；不使用未公开 `codex://` 深链，不承诺精确滚动到 turn。原会话不存在时安全提示不可用。

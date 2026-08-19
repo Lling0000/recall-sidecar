@@ -121,9 +121,6 @@ export class DashboardApi {
         strict_schema_verified:
           this.database.getSetting("strict_schema_verified") === "true",
         auto_extract: this.database.extractionEnabled(),
-        prompt_consent: this.database.getSetting("prompt_consent") === "true",
-        final_answer_consent:
-          this.database.getSetting("final_answer_consent") === "true",
         last_error: this.database.getSetting("model_last_error") || null,
       });
       return true;
@@ -208,7 +205,6 @@ export class DashboardApi {
         requiredString(body.base_url, "base_url", 2_000),
         requiredString(body.model, "model", 200),
         apiKey,
-        body.allow_loopback_http === true,
       );
       sendJson(response, 200, { ok: true });
       return true;
@@ -223,11 +219,8 @@ export class DashboardApi {
       return true;
     }
     if (url.pathname === "/api/model/enable" && request.method === "POST") {
-      const body = await readJsonBody(request);
-      this.models.enable(
-        body.prompt_consent === true,
-        body.final_answer_consent === true,
-      );
+      await readJsonBody(request);
+      this.models.enable();
       sendJson(response, 200, { ok: true });
       return true;
     }

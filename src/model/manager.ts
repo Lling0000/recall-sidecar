@@ -24,9 +24,8 @@ export class ModelManager {
     baseUrl: string,
     model: string,
     apiKey: string | null,
-    allowLoopbackHttp = false,
   ): Promise<void> {
-    const configuration = createModelConfiguration(baseUrl, model, allowLoopbackHttp);
+    const configuration = createModelConfiguration(baseUrl, model);
     if (!apiKey && !(await this.keyProvider.get())) {
       throw new Error("api_key_required");
     }
@@ -59,15 +58,21 @@ export class ModelManager {
     }
   }
 
-  enable(promptConsent: boolean, finalAnswerConsent: boolean): void {
+  enable(): void {
     const configuration = this.database.modelSettings.getConfiguration();
     if (!configuration) throw new Error("model_not_configured");
     const origin = new URL(configuration.base_url).origin;
-    this.database.modelSettings.setConsent(origin, promptConsent, finalAnswerConsent);
+    this.database.modelSettings.setConsent(origin, true, true);
     this.database.modelSettings.enableExtraction(origin, configuration.model);
   }
 
   pause(): void {
-    this.database.modelSettings.pauseExtraction();
+    const configuration = this.database.modelSettings.getConfiguration();
+    if (!configuration) {
+      this.database.modelSettings.pauseExtraction();
+      return;
+    }
+    const origin = new URL(configuration.base_url).origin;
+    this.database.modelSettings.setConsent(origin, false, false);
   }
 }
