@@ -32,7 +32,7 @@ Sidecar（唯一写入者）
 | DATA-01 | 数据只存本机；仅抽取请求可发往用户配置的模型地址。 | 网络审计无其他外连。 |
 | DATA-02 | API Key 只存系统钥匙串，不进 DB、日志或 Hook 环境。 | 全目录扫描无 Key。 |
 | DATA-03 | Prompt、最终回答不落盘；仅在抽取时从 rollout 即时投影。发送远程模型前只遮蔽 PAT、JWT、PEM 和高熵密钥，普通文本、路径和文件夹名不处理。 | DB、WAL、备份、日志无 Prompt/回答正文；模型请求无密钥原值。 |
-| REPO-01 | 有 Git 时按本机仓指纹隔离（`sha256(realpath(common_dir))`），不用仓库名或 remote 当身份。看板显示 `codex-local/<名>`，不展示哈希。 | 同名 Git 仓、不同 clone 互相召回为零。 |
+| REPO-01 | 有 Git 时按本机仓指纹隔离（`sha256(realpath(common_dir))`），不用仓库名或 remote 当身份。看板标题只显示仓库名，路径作为副标题，不展示哈希或产品前缀。 | 同名 Git 仓、不同 clone 互相召回为零；看板标题只显示仓库名并靠路径区分。 |
 | REPO-02 | 解析 `.git` / `gitdir` / `commondir`，不执行 `git`。 | Hook 与 Sidecar 路径中无 `git` 子进程。 |
 | REPO-03 | 无 Git 或 Git 元数据不可用：按 `sha256(realpath(SessionStart 初始 cwd))` 隔离，不按文件夹名合并，不另建「无仓」类。 | 同名不同路径互相召回为零；目录移动后成为新仓库身份。 |
 | REPO-04 | session 与 repo 是多对一：同一仓库可绑定多个 session，记忆只按 repo 共享；会话绑定后不得偷换 repo。 | 同 repo 多 session 可互相召回；跨仓 cwd 的当前轮空操作。 |
@@ -65,12 +65,12 @@ Sidecar（唯一写入者）
 
 记忆只有一种列表，没有「无仓」分类，也不匿名、不隐藏名称。仓库身份分为 `git` 与 `folder`，两者都使用本机路径派生的不可展示指纹；文件夹名只用于显示。
 
-**本机仓指纹：** 只在这台电脑上，用「这份 Git 对象库的绝对路径」算出的 ID，不是 commit hash，也不是 GitHub 指纹。`git push` 改不了它。内部列名 `local_fingerprint`。看板永远显示 `codex-local/<仓库名>` + 路径，不把哈希给用户看。
+**本机仓指纹：** 只在这台电脑上，用「这份 Git 对象库的绝对路径」算出的 ID，不是 commit hash，也不是 GitHub 指纹。`git push` 改不了它。内部列名 `local_fingerprint`。看板标题永远只显示 `<仓库名>`，副标题显示路径，不把哈希或产品前缀给用户看。
 
 **仓库名给人看，本机仓指纹给人当钥匙。** `git push`、改 remote、提交，都不会改这份本地 `.git` 住在哪。若身份改成纯仓库名：worktree 会共享（好），但两份 clone 都叫 hook 会并成一份，和「clone 两份记忆」相反。
 
 - **钥匙：** 有 Git 时 = 本机仓指纹。worktree 指向同一对象库 → 共享；另一份 clone 有自己的 `.git` → 两份。
-- **标签：** `codex-local/<仓库名>`，副标题是路径。前缀是本产品的。
+- **标签：** `<仓库名>`，副标题是路径；标题不加产品前缀。
 - **remote：** 只当标签。推送、改 origin 不换钥匙。
 
 四张盘面：
@@ -78,11 +78,11 @@ Sidecar（唯一写入者）
 | 盘面 | 你在干什么 | 记忆 |
 |---|---|---|
 | worktree 共享 | 同一份 Git 用 `git worktree` 开第二个工作目录（`.git` 是文件，指向主仓对象库） | **同一份**。两个检出，纠正两边都生效。 |
-| clone 隔离 | `git clone` 到别的文件夹，那里有自己的 `.git` | **两份**。即使都叫 hook 也不自动合并；看板都显示 `codex-local/hook`，靠路径认。首版无合并按钮。 |
-| 仅同名不同仓 | `~/work/acme/ios` 和 `~/work/beta/ios` | **两份钥匙**（两套 Git）。看板都可能叫 `codex-local/ios`，靠路径认。 |
+| clone 隔离 | `git clone` 到别的文件夹，那里有自己的 `.git` | **两份**。即使都叫 hook 也不自动合并；看板标题都显示 `hook`，靠路径认。首版无合并按钮。 |
+| 仅同名不同仓 | `~/work/acme/ios` 和 `~/work/beta/ios` | **两份钥匙**（两套 Git）。看板标题都可能叫 `ios`，靠路径认。 |
 | 无 Git 同名目录 | `/work/acme/demo` 和 `/tmp/demo` | **两份钥匙**。真实根路径不同，不按 `demo` 这个名称合并。 |
 
-- **有 Git**：身份是本机仓指纹，展示用 `codex-local/` + 文件夹名。不用仓库名当钥匙，不用 remote 当钥匙。
+- **有 Git**：身份是本机仓指纹，标题展示文件夹名，副标题展示路径。不用仓库名当钥匙，不用 remote 当钥匙。
 - **没有 Git**（或 `.git` 损坏/越界解析失败）：身份是会话首次绑定根目录的真实路径指纹，纠正照常抽取、覆盖、召回。同名不同路径必须隔离。
 
 不跟 Prime：Prime 按 session / 用户主目录全局 harness，不按 Git、也不按文件夹名。
@@ -99,7 +99,7 @@ Sidecar（唯一写入者）
 6. 本机仓指纹 `local_fingerprint = sha256(realpath(common_dir))`。首次出现时生成随机 `repo_id`。worktree 共享该 ID；另一份 clone 是不同 ID。看板不展示该哈希。
 7. `origin` URL 只存 `remote_label`，原样展示。变化则告警，不改 `repo_id`。首版不提供「合并两个 Git repo_id」。
 
-**「合并两个仓」是什么：** clone 隔离之后，`~/src/hook` 和 `~/tmp/hook` 是两把本机仓指纹、两堆记忆，即使都显示 `codex-local/hook`。合并 = 你在看板声明「这两份是同一个项目」，把记忆归到一把钥匙下。**首版不做合并按钮**，只靠路径区分；要共用就在同一个目录干活，或等 P1。
+**「合并两个仓」是什么：** clone 隔离之后，`~/src/hook` 和 `~/tmp/hook` 是两把本机仓指纹、两堆记忆，即使标题都显示 `hook`。合并 = 你在看板声明「这两份是同一个项目」，把记忆归到一把钥匙下。**首版不做合并按钮**，只靠路径区分；要共用就在同一个目录干活，或等 P1。
 
 #### 无 Git 时（按真实根路径）
 
@@ -525,7 +525,7 @@ API Key 通过 Sidecar 写入 macOS Keychain service `codex-local-memory`、acco
 
 | ID | 测试 | 通过条件 |
 |---|---|---|
-| P0-01 | 两个不同组织的同名仓库写 canary。 | 互相召回为零。 |
+| P0-01 | 两个不同组织的同名仓库写 canary，并检查看板仓库标题。 | 互相召回为零；标题只显示仓库名、不加产品前缀，靠路径区分。 |
 | P0-02 | 记忆含伪造 system、Shell、工具 JSON。 | 只显示文本，不直接触发工具。 |
 | P0-03 | Prompt 含 JWT、PAT、PEM、高熵密钥。 | DB、FTS、WAL、备份、日志无 Prompt/回答正文；模型请求无密钥原值。 |
 | P0-04 | 恶意网页请求回滚或删除。 | Origin/CSRF/会话校验拒绝。 |
@@ -577,7 +577,7 @@ API Key 通过 Sidecar 写入 macOS Keychain service `codex-local-memory`、acco
 - 抽取：有用户句的完成 Turn 直接抽。Prompt + 最终回答只在内存中即时投影，外发前遮蔽密钥类内容；对照集用本轮用户句本仓 FTS 最多 8 条。词表不作硬门。
 - 指代：抽取模型输出 `need_prev_turn` 则附上一轮用户句再抽一次（最多一轮）。本地短句/指代词可第一次就带上。不另开判断 Agent。召回 FTS 空不为此打抽取模型。
 - 写回卡片：`title` / `wrong_behavior` / `correct_behavior` / `applicability`。动作只允许 `skip | reject | create | update | need_prev_turn`；顶层四键必填，非适用值为 `null`，不接受 `supersede`。
-- 分仓：Git 用 `common_dir` 指纹，worktree 共享、clone 隔离；无 Git 用 SessionStart 初始根路径指纹，同名路径隔离、移动后成为新身份。看板显示 `codex-local/<名>` + 路径。**首版不做合并两个仓**。
+- 分仓：Git 用 `common_dir` 指纹，worktree 共享、clone 隔离；无 Git 用 SessionStart 初始根路径指纹，同名路径隔离、移动后成为新身份。看板标题只显示仓库名，副标题显示路径。**首版不做合并两个仓**。
 - 会话：一个 repo 可绑定多个 session；Turn 属于 session，记忆属于 repo。会话粘性禁止跨仓偷换。
 - 召回：首版 FTS 最多 3 条纯文本 `additionalContext`。二期再加 embedding。`wrong_behavior` 默认不注入。
 - 存储：一台机器一套 SQLite，四字段按 `repo_id` 落库；不保存 Prompt/最终回答正文。拼接是 Sidecar 模板，不是 Agent。

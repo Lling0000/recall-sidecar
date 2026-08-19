@@ -28,7 +28,7 @@
 
 ## 产品名与固定路径
 
-- 展示前缀：`codex-local/`
+- 看板仓库标题：只显示仓库名称，不加产品前缀；路径作为副标题保留
 - 正式数据目录：`~/Library/Application Support/codex-local-memory/`
 - Unix socket：数据目录下 `sidecar.sock`
 - Keychain service：`codex-local-memory`

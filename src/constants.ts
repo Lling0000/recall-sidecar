@@ -1,5 +1,4 @@
 export const PRODUCT_NAME = "codex-local-memory";
-export const DISPLAY_PREFIX = "codex-local/";
 export const SUPPORTED_NODE_RANGE = ">=24.15.0 <25";
 export const SUPPORTED_CODEX_CLI_VERSIONS = ["0.148.0-alpha.9"] as const;
 export type SupportedCodexCliVersion = (typeof SUPPORTED_CODEX_CLI_VERSIONS)[number];
