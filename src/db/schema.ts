@@ -64,6 +64,33 @@ CREATE TABLE IF NOT EXISTS candidates (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS turn_candidates (
+  refine_job_id TEXT PRIMARY KEY REFERENCES refine_jobs(id) ON DELETE CASCADE,
+  repo_id TEXT NOT NULL REFERENCES repositories(id),
+  session_id TEXT NOT NULL REFERENCES sessions(id),
+  native_turn_ref TEXT NOT NULL,
+  action TEXT NOT NULL,
+  target_id TEXT,
+  base_version INTEGER,
+  revision INTEGER NOT NULL,
+  content TEXT,
+  state TEXT NOT NULL CHECK (state IN ('staged', 'consumed', 'dismissed')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS session_refine_jobs (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES sessions(id),
+  repo_id TEXT NOT NULL REFERENCES repositories(id),
+  reason TEXT NOT NULL CHECK (reason IN ('turn_interval', 'compact')),
+  state TEXT NOT NULL CHECK (state IN ('queued', 'running', 'completed', 'skipped', 'failed')),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS memories (
   id TEXT PRIMARY KEY,
   repo_id TEXT NOT NULL REFERENCES repositories(id),

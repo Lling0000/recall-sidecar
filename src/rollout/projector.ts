@@ -80,6 +80,22 @@ export async function projectRollout(
   expectedSessionId: string,
   expectedTurnId: string,
 ): Promise<RolloutProjection> {
+  const [projection] = await projectRollouts(transcriptPath, expectedSessionId, [
+    expectedTurnId,
+  ]);
+  if (!projection) throw new ProjectionError("turn_not_found");
+  return projection;
+}
+
+export async function projectRollouts(
+  transcriptPath: string,
+  expectedSessionId: string,
+  expectedTurnIds: readonly string[],
+): Promise<RolloutProjection[]> {
+  const expectedTurns = new Set(expectedTurnIds);
+  if (expectedTurns.size !== expectedTurnIds.length || expectedTurns.size === 0) {
+    throw new ProjectionError("turn_not_found");
+  }
   let sessionMeta: SessionMetaProjection | null = null;
   const completedWindows: WindowProjection[] = [];
   let currentWindow: WindowProjection | null = null;
@@ -132,7 +148,7 @@ export async function projectRollout(
         const turnId = stringValue(payload.turn_id);
         if (!turnId) throw new ProjectionError("fixture_mismatch");
         sawTaskShape = true;
-        if (currentWindow?.turnId === expectedTurnId) {
+        if (currentWindow && expectedTurns.has(currentWindow.turnId)) {
           throw new ProjectionError("incomplete_turn");
         }
         currentWindow = {
@@ -168,7 +184,7 @@ export async function projectRollout(
         if (!turnId) throw new ProjectionError("fixture_mismatch");
         sawTaskShape = true;
         if (turnId !== currentWindow.turnId) {
-          if (currentWindow.turnId === expectedTurnId || turnId === expectedTurnId) {
+          if (expectedTurns.has(currentWindow.turnId) || expectedTurns.has(turnId)) {
             throw new ProjectionError("incomplete_turn");
           }
           currentWindow = null;
@@ -200,38 +216,37 @@ export async function projectRollout(
   }
   if (sessionMeta.isSubagent) throw new ProjectionError("subagent");
 
-  const targetIndex = completedWindows.findIndex(
-    (window) => window.turnId === expectedTurnId,
-  );
-  if (targetIndex < 0) {
-    if (currentWindow?.turnId === expectedTurnId) {
-      throw new ProjectionError("incomplete_turn");
+  return expectedTurnIds.map((expectedTurnId) => {
+    const targetIndex = completedWindows.findIndex(
+      (window) => window.turnId === expectedTurnId,
+    );
+    if (targetIndex < 0) {
+      if (currentWindow?.turnId === expectedTurnId) {
+        throw new ProjectionError("incomplete_turn");
+      }
+      throw new ProjectionError("turn_not_found");
     }
-    throw new ProjectionError("turn_not_found");
-  }
-
-  const target = completedWindows[targetIndex];
-  if (!target?.userPrompt) throw new ProjectionError("missing_user_prompt");
-  if (!target.finalAnswer) throw new ProjectionError("missing_final_answer");
-
-  const previousUserPrompt =
-    targetIndex > 0 ? (completedWindows[targetIndex - 1]?.userPrompt ?? null) : null;
-  const digestInput = {
-    sessionId: expectedSessionId,
-    turnId: expectedTurnId,
-    userPrompt: target.userPrompt,
-    finalAnswer: target.finalAnswer,
-    previousUserPrompt,
-  };
-
-  return {
-    cliVersion: sessionMeta.cliVersion,
-    sessionId: expectedSessionId,
-    turnId: expectedTurnId,
-    userPrompt: target.userPrompt,
-    finalAnswer: target.finalAnswer,
-    previousUserPrompt,
-    projectionVersion: ROLLOUT_PROJECTION_VERSION,
-    sourceDigest: canonicalDigest(digestInput),
-  };
+    const target = completedWindows[targetIndex];
+    if (!target?.userPrompt) throw new ProjectionError("missing_user_prompt");
+    if (!target.finalAnswer) throw new ProjectionError("missing_final_answer");
+    const previousUserPrompt =
+      targetIndex > 0 ? (completedWindows[targetIndex - 1]?.userPrompt ?? null) : null;
+    const digestInput = {
+      sessionId: expectedSessionId,
+      turnId: expectedTurnId,
+      userPrompt: target.userPrompt,
+      finalAnswer: target.finalAnswer,
+      previousUserPrompt,
+    };
+    return {
+      cliVersion: sessionMeta.cliVersion,
+      sessionId: expectedSessionId,
+      turnId: expectedTurnId,
+      userPrompt: target.userPrompt,
+      finalAnswer: target.finalAnswer,
+      previousUserPrompt,
+      projectionVersion: ROLLOUT_PROJECTION_VERSION,
+      sourceDigest: canonicalDigest(digestInput),
+    };
+  });
 }

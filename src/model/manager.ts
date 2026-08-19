@@ -1,6 +1,7 @@
 import type { MemoryDatabase } from "../db/database.js";
 import { ModelError, StrictModelClient } from "./client.js";
 import { createModelConfiguration } from "./configuration.js";
+import { SessionRefineClient } from "./session-client.js";
 import type { ApiKeyProvider, ExtractionInput, ModelCallResult } from "./types.js";
 
 const CONNECTION_TEST_INPUT: ExtractionInput = {
@@ -11,21 +12,26 @@ const CONNECTION_TEST_INPUT: ExtractionInput = {
 
 export class ModelManager {
   readonly client: StrictModelClient;
+  readonly sessionClient: SessionRefineClient;
 
   constructor(
     private readonly database: MemoryDatabase,
     private readonly keyProvider: ApiKeyProvider,
     client?: StrictModelClient,
+    sessionClient?: SessionRefineClient,
   ) {
     this.client = client ?? new StrictModelClient(this.database.modelSettings);
+    this.sessionClient =
+      sessionClient ?? new SessionRefineClient(this.database.modelSettings);
   }
 
   async configure(
     baseUrl: string,
     model: string,
     apiKey: string | null,
+    refinerModel = model,
   ): Promise<void> {
-    const configuration = createModelConfiguration(baseUrl, model);
+    const configuration = createModelConfiguration(baseUrl, model, refinerModel);
     if (!apiKey && !(await this.keyProvider.get())) {
       throw new Error("api_key_required");
     }
@@ -46,8 +52,53 @@ export class ModelManager {
         apiKey,
         CONNECTION_TEST_INPUT,
       );
+      await this.sessionClient.gate(configuration, apiKey, {
+        turns: [
+          {
+            turn_id: "connection-test-turn",
+            user_prompt: "This is a one-off connection test.",
+            final_answer: "Connection test acknowledged.",
+          },
+        ],
+        candidates: [
+          {
+            job_id: "connection-test-job",
+            turn_id: "connection-test-turn",
+            action: "skip",
+            target_memory_id: null,
+            base_version: null,
+            memory: null,
+          },
+        ],
+        active_memories: [],
+      });
+      await this.sessionClient.refine(configuration, apiKey, {
+        turns: [
+          {
+            turn_id: "connection-test-turn",
+            user_prompt: "This is a one-off connection test.",
+            final_answer: "Connection test acknowledged.",
+          },
+        ],
+        candidates: [
+          {
+            job_id: "connection-test-job",
+            turn_id: "connection-test-turn",
+            action: "skip",
+            target_memory_id: null,
+            base_version: null,
+            memory: null,
+          },
+        ],
+        active_memories: [],
+        selected_turn_ids: ["connection-test-turn"],
+      });
       const origin = new URL(configuration.base_url).origin;
-      this.database.modelSettings.markStrictSchemaVerified(origin, configuration.model);
+      this.database.modelSettings.markStrictSchemaVerified(
+        origin,
+        configuration.model,
+        configuration.refiner_model,
+      );
       this.database.modelSettings.clearFailure();
       return result;
     } catch (error) {
@@ -63,7 +114,11 @@ export class ModelManager {
     if (!configuration) throw new Error("model_not_configured");
     const origin = new URL(configuration.base_url).origin;
     this.database.modelSettings.setConsent(origin, true, true);
-    this.database.modelSettings.enableExtraction(origin, configuration.model);
+    this.database.modelSettings.enableExtraction(
+      origin,
+      configuration.model,
+      configuration.refiner_model,
+    );
   }
 
   pause(): void {

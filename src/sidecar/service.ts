@@ -44,6 +44,18 @@ export class SidecarService {
           identity,
           request.transcript_path ?? null,
         );
+        if (
+          request.source === "compact" &&
+          this.database.extractionEnabled() &&
+          !this.database.repositoryPaused(session.repoId)
+        ) {
+          const jobId = this.database.sessionRefines.enqueue(
+            session.id,
+            session.repoId,
+            "compact",
+          );
+          if (jobId) this.onJobEnqueued();
+        }
         return { ok: true, repo_id: session.repoId };
       }
 

@@ -32,4 +32,4 @@ npm run test:host
 
 首版最终实现与验收结果见 [docs/implementation-report.md](./docs/implementation-report.md)。
 
-首版不包含 embedding、向量库、Skill 搜索入口、第二判断模型、手工创建/编辑记忆、导出或仓库合并。
+首版不包含 embedding、向量库、Skill 搜索入口、手工创建/编辑记忆、导出或仓库合并。逐轮候选在 25 回合或 compact 检查点经 Gate＋Refiner 后才沉淀为长期记忆。

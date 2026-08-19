@@ -88,6 +88,31 @@ test("P0-01/P0-16 multiple sessions share one repo while same-name folders stay 
   }
 });
 
+test("final refined creates are active immediately and enter pending review", async () => {
+  const { db, a1 } = await setup();
+  try {
+    const createJob = job(db, a1.id, "turn-create-review");
+    db.applyExtractResult(
+      createJob.jobId,
+      a1.repoId,
+      createResult(FIRST_CARD),
+      a1.id,
+      "turn-create-review",
+      2,
+    );
+    assert.match(db.recall(a1.repoId, "网络请求 timeout"), /30s/u);
+    const [review] = db.listPendingReviews();
+    assert.ok(review);
+    assert.equal(review.action, "create");
+    assert.equal(review.oldCard, null);
+    assert.equal(review.newVersion, 1);
+    db.confirmCandidate(review.candidateId);
+    assert.equal(db.listPendingReviews().length, 0);
+  } finally {
+    db.close();
+  }
+});
+
 test("P0-12/P0-13 update is active immediately and rollback creates a new version", async () => {
   const { db, a1 } = await setup();
   try {

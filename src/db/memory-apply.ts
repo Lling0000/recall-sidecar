@@ -1,10 +1,16 @@
 import { randomUUID } from "node:crypto";
+import type {
+  SessionRefinerEdit,
+  StagedTurnCandidate,
+} from "../model/session-types.js";
 import { validateMemoryCard } from "../security/memory-card.js";
 import type { ExtractResult, MemoryCard } from "../types.js";
 import type { DatabaseCore } from "./core.js";
 import { replaceMemoryFts } from "./fts-writer.js";
 import { now, row, topicKey } from "./helpers.js";
 import type { JobStore } from "./job-store.js";
+import { applySessionEdits } from "./memory-session-apply.js";
+import { recordStaleCandidate } from "./memory-stale.js";
 import type { AppliedCandidate } from "./types.js";
 
 export class MemoryApplyStore {
@@ -46,6 +52,59 @@ export class MemoryApplyStore {
         );
       }
       return this.skip(jobId, repoId, result.action, revision);
+    });
+  }
+
+  applySessionRefinement(
+    repoId: string,
+    sessionId: string,
+    edits: readonly SessionRefinerEdit[],
+    candidates: readonly StagedTurnCandidate[],
+  ): AppliedCandidate[] {
+    return applySessionEdits(edits, candidates, {
+      transaction: (operation) => this.core.transaction(operation),
+      existing: (jobId) => this.existing(jobId),
+      updateIsCurrent: (edit) => {
+        const target = edit.target_memory_id
+          ? this.activeTarget(edit.target_memory_id)
+          : null;
+        return Boolean(
+          target &&
+            target.repo_id === repoId &&
+            target.state === "active" &&
+            target.version_no === edit.base_version,
+        );
+      },
+      create: (source, edit) => {
+        if (edit.target_memory_id !== null || edit.base_version !== null) {
+          throw new Error("session_refine_create_semantics");
+        }
+        return this.create(
+          source.job_id,
+          repoId,
+          validateMemoryCard(edit.memory),
+          sessionId,
+          edit.source_turn_id,
+          2,
+        );
+      },
+      update: (source, edit) => {
+        const card = validateMemoryCard(edit.memory);
+        return this.update(
+          source.job_id,
+          repoId,
+          {
+            action: "update",
+            target_memory_id: edit.target_memory_id,
+            base_version: edit.base_version,
+            memory: card,
+          },
+          card,
+          sessionId,
+          edit.source_turn_id,
+          2,
+        );
+      },
     });
   }
 
@@ -141,7 +200,7 @@ export class MemoryApplyStore {
         `INSERT INTO candidates(
           id,refine_job_id,repo_id,action,target_id,applied_memory_id,
           base_version,revision,content,state,review_state,created_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,'applied','none',?)`,
+        ) VALUES (?,?,?,?,?,?,?,?,?,'applied','unverified',?)`,
       )
       .run(
         candidateId,
@@ -178,7 +237,16 @@ export class MemoryApplyStore {
       target.state !== "active" ||
       target.version_no !== baseVersion
     ) {
-      return this.stale(jobId, repoId, targetId, baseVersion, card, revision);
+      return recordStaleCandidate(
+        this.core,
+        this.jobs,
+        jobId,
+        repoId,
+        targetId,
+        baseVersion,
+        card,
+        revision,
+      );
     }
 
     const timestamp = now();
@@ -247,38 +315,6 @@ export class MemoryApplyStore {
         )
         .get(memoryId),
     );
-  }
-
-  private stale(
-    jobId: string,
-    repoId: string,
-    targetId: string,
-    baseVersion: number,
-    card: MemoryCard,
-    revision: number,
-  ): AppliedCandidate {
-    const candidateId = randomUUID();
-    this.core.db
-      .prepare(
-        `INSERT INTO candidates(
-          id,refine_job_id,repo_id,action,target_id,base_version,revision,
-          content,state,review_state,created_at
-        ) VALUES (?,?,?,?,?,?,?,?,'stale','none',?)`,
-      )
-      .run(
-        candidateId,
-        jobId,
-        repoId,
-        "update",
-        targetId,
-        baseVersion,
-        revision,
-        JSON.stringify(card),
-        now(),
-      );
-    this.jobs.complete(jobId);
-    this.core.audit("candidate_stale", targetId, { repo_id: repoId });
-    return { candidateId, state: "stale", memoryId: null, version: null };
   }
 
   private finishApplied(

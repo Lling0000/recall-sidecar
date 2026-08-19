@@ -1,3 +1,4 @@
+import type { StagedTurnCandidate } from "../model/session-types.js";
 import type { MemoryCard, RepoIdentity } from "../types.js";
 
 export interface RepositoryRow {
@@ -38,6 +39,21 @@ export interface ClaimedJob {
   attempts: number;
 }
 
+export interface ClaimedSessionRefineJob {
+  jobId: string;
+  sessionId: string;
+  nativeSessionRef: string;
+  repoId: string;
+  transcriptPath: string;
+  reason: "turn_interval" | "compact";
+  attempts: number;
+}
+
+export interface SessionRefineBatch {
+  job: ClaimedSessionRefineJob;
+  candidates: StagedTurnCandidate[];
+}
+
 export interface AppliedCandidate {
   candidateId: string;
   state: "applied" | "skipped" | "stale";
@@ -60,11 +76,12 @@ export interface ListedMemory {
 }
 
 export interface PendingReview {
+  action: "create" | "update";
   candidateId: string;
   memoryId: string;
-  oldVersionId: string;
-  oldVersion: number;
-  oldCard: MemoryCard;
+  oldVersionId: string | null;
+  oldVersion: number | null;
+  oldCard: MemoryCard | null;
   newVersionId: string;
   newVersion: number;
   newCard: MemoryCard;

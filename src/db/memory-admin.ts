@@ -10,7 +10,9 @@ export class MemoryAdminStore {
     this.core.transaction(() => {
       this.core.db
         .prepare(
-          "UPDATE candidates SET review_state='confirmed' WHERE id=? AND review_state='unverified'",
+          `UPDATE candidates SET review_state='confirmed'
+           WHERE id=? AND state='applied'
+             AND (review_state='unverified' OR (action='create' AND review_state='none'))`,
         )
         .run(candidateId);
       this.core.audit("candidate_confirmed", candidateId, {});

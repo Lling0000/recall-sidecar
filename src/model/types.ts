@@ -4,6 +4,7 @@ export interface ModelConfiguration {
   provider: "openai-compatible";
   base_url: string;
   model: string;
+  refiner_model: string;
   api_key_ref: "os-keychain://codex-local-memory/extract-api-key";
   timeout_ms: number;
   max_input_chars: number;

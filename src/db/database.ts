@@ -1,4 +1,8 @@
 import { dirname, join } from "node:path";
+import type {
+  SessionRefinerEdit,
+  StagedTurnCandidate,
+} from "../model/session-types.js";
 import type { ExtractResult, RepoIdentity } from "../types.js";
 import { BackupStore } from "./backup-store.js";
 import { DatabaseCore } from "./core.js";
@@ -8,6 +12,7 @@ import { MemoryApplyStore } from "./memory-apply.js";
 import { MemoryQueryStore } from "./memory-query.js";
 import { ModelSettingsStore } from "./model-settings.js";
 import { RepositoryStore } from "./repository-store.js";
+import { SessionRefineStore } from "./session-refine-store.js";
 import type {
   AppliedCandidate,
   BoundSession,
@@ -27,6 +32,7 @@ export class MemoryDatabase {
   private readonly queries: MemoryQueryStore;
   private readonly applyStore: MemoryApplyStore;
   private readonly admin: MemoryAdminStore;
+  readonly sessionRefines: SessionRefineStore;
   readonly modelSettings: ModelSettingsStore;
   private readonly backups: BackupStore;
 
@@ -37,6 +43,7 @@ export class MemoryDatabase {
     this.queries = new MemoryQueryStore(this.core);
     this.applyStore = new MemoryApplyStore(this.core, this.jobs);
     this.admin = new MemoryAdminStore(this.core);
+    this.sessionRefines = new SessionRefineStore(this.core, this.jobs);
     this.modelSettings = new ModelSettingsStore(this.core);
     this.backups = new BackupStore(this.core, join(dirname(path), "backups"));
   }
@@ -124,6 +131,15 @@ export class MemoryDatabase {
       sourceTurnRef,
       revision,
     );
+  }
+
+  applySessionRefinement(
+    repoId: string,
+    sessionId: string,
+    edits: readonly SessionRefinerEdit[],
+    candidates: readonly StagedTurnCandidate[],
+  ): AppliedCandidate[] {
+    return this.applyStore.applySessionRefinement(repoId, sessionId, edits, candidates);
   }
 
   confirmCandidate(candidateId: string): void {

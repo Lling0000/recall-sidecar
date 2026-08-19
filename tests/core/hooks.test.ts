@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -104,4 +104,70 @@ test("P0-06 Stop always returns continue true when Sidecar is unavailable", asyn
   });
   assert.equal(stdout, '{"continue":true}\n');
   assert.equal(stderr, "codex-local-memory: stop unavailable\n");
+});
+
+test("SessionStart compact schedules Gate for staged turn candidates", async () => {
+  const root = await mkdtemp(join(tmpdir(), "clm-compact-hook-"));
+  const project = join(root, "project");
+  const data = join(root, "data");
+  const socket = join(data, "sidecar.sock");
+  const transcript = join(root, "rollout-compact-session.jsonl");
+  await mkdir(project, { recursive: true });
+  await writeFile(transcript, "{}\n");
+  const database = new MemoryDatabase(join(data, "memory.sqlite"));
+  for (const key of [
+    "strict_schema_verified",
+    "prompt_consent",
+    "final_answer_consent",
+    "auto_extract",
+  ]) {
+    database.setSetting(key, "true");
+  }
+  let wakes = 0;
+  const server = new SidecarSocketServer(
+    socket,
+    new SidecarService(database, {
+      allowedTranscriptRoots: [root],
+      onJobEnqueued: () => {
+        wakes += 1;
+      },
+    }),
+  );
+  await server.start();
+  try {
+    await runHook("session-start", {
+      socketPath: socket,
+      input: { session_id: "compact-session", cwd: project },
+      stdout: () => undefined,
+      stderr: () => undefined,
+    });
+    const session = database.getBoundSession("codex", "compact-session");
+    assert.ok(session);
+    const queued = database.enqueueStop(session.id, "compact-turn", transcript, true);
+    assert.ok(queued.jobId);
+    database.sessionRefines.stage(
+      queued.jobId,
+      session.repoId,
+      session.id,
+      "compact-turn",
+      {
+        action: "skip",
+        target_memory_id: null,
+        base_version: null,
+        memory: null,
+      },
+      1,
+    );
+    await runHook("session-start", {
+      socketPath: socket,
+      input: { session_id: "compact-session", cwd: project, source: "compact" },
+      stdout: () => undefined,
+      stderr: () => undefined,
+    });
+    assert.equal(wakes, 1);
+    assert.equal(database.sessionRefines.claimNext()?.reason, "compact");
+  } finally {
+    await server.stop();
+    database.close();
+  }
 });

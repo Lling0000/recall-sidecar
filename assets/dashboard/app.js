@@ -73,40 +73,58 @@ async function api(path, options = {}) {
   return body;
 }
 async function renderReviews() {
-  setPage("reviews", "待核对", "新的更正已经生效，请确认覆盖是否符合预期。");
+  setPage("reviews", "待核对", "新建和更新的记忆已经生效，请确认是否适合长期保留。");
   const { reviews } = await api("/api/reviews");
-  if (!reviews.length) return content.append(emptyState("没有需要核对的覆盖", "check-circle"));
+  if (!reviews.length) return content.append(emptyState("没有需要核对的记忆", "check-circle"));
   const list = element("div", undefined, "review-list");
   for (const review of reviews) {
     const panel = element("article", undefined, "review-panel");
     const heading = element("div", undefined, "review-heading");
     heading.append(
       element("h2", review.newCard.title),
-      element("span", `v${review.oldVersion} → v${review.newVersion}`, "muted"),
+      element("span", review.action === "create" ? `新建 · v${review.newVersion}` : `v${review.oldVersion} → v${review.newVersion}`, "muted"),
     );
     const compare = element("div", undefined, "compare");
-    const oldSide = element("div");
-    oldSide.append(element("h3", "旧版本"), field("正确行为", review.oldCard.correct_behavior));
     const newSide = element("div");
-    newSide.append(element("h3", "新版本"), field("正确行为", review.newCard.correct_behavior));
-    compare.append(oldSide, newSide);
+    newSide.append(
+      element("h3", review.action === "create" ? "新记忆" : "新版本"),
+      field("正确行为", review.newCard.correct_behavior),
+      field("适用场景", review.newCard.applicability),
+    );
+    if (review.action === "create") {
+      compare.classList.add("create");
+      compare.append(newSide);
+    } else {
+      const oldSide = element("div");
+      oldSide.append(element("h3", "旧版本"), field("正确行为", review.oldCard.correct_behavior));
+      compare.append(oldSide, newSide);
+    }
     const actions = element("div", undefined, "actions");
-    actions.append(
-      actionButton("恢复旧版", "secondary", async () => {
+    if (review.action === "create") {
+      actions.append(actionButton("删除这条记忆", "danger-button", async () => {
+        if (!window.confirm("永久删除这条新记忆和全部版本？")) return;
+        await api(`/api/memories/${encodeURIComponent(review.memoryId)}`, {
+          method: "DELETE",
+          body: JSON.stringify({ confirm_memory_id: review.memoryId }),
+        });
+        await renderReviews();
+      }));
+    } else {
+      actions.append(actionButton("恢复旧版", "secondary", async () => {
         await api(`/api/memories/${encodeURIComponent(review.memoryId)}/rollback`, {
           method: "POST",
           body: JSON.stringify({ version_id: review.oldVersionId }),
         });
         await renderReviews();
-      }, "arrow-clockwise"),
-      actionButton("确认没问题", "primary", async () => {
-        await api(`/api/reviews/${encodeURIComponent(review.candidateId)}/confirm`, {
-          method: "POST",
-          body: "{}",
-        });
-        await renderReviews();
-      }, "check-circle"),
-    );
+      }, "arrow-clockwise"));
+    }
+    actions.append(actionButton(review.action === "create" ? "确认保留" : "确认没问题", "primary", async () => {
+      await api(`/api/reviews/${encodeURIComponent(review.candidateId)}/confirm`, {
+        method: "POST",
+        body: "{}",
+      });
+      await renderReviews();
+    }, "check-circle"));
     panel.append(heading, compare, actions);
     list.append(panel);
   }
@@ -241,18 +259,19 @@ async function renderModel() {
   const data = await api("/api/model");
   const stack = element("div", undefined, "settings-stack");
   const configuration = element("section", undefined, "settings-group");
-  configuration.append(element("h2", "连接配置"), element("p", "只接受 HTTPS 模型地址。API Key 仅保存在 macOS Keychain；保存后会使用正式 Schema 验证一次。", "muted"));
+  configuration.append(element("h2", "连接配置"), element("p", "逐轮模型只生成候选；Gate/Refiner 模型在 25 回合或 compact 后沉淀长期记忆。保存后会分别验证三种严格 Schema。", "muted"));
   const form = element("div", undefined, "form-grid");
   const base = inputWithValue(data.configuration?.base_url || "", "https://example.com/v1");
   const model = inputWithValue(data.configuration?.model || "", "抽取模型名称");
+  const refinerModel = inputWithValue(data.configuration?.refiner_model || data.configuration?.model || "", "Gate/Refiner 模型名称");
   const key = inputWithValue("", "API Key（不会回显）");
   key.type = "password";
-  form.append(labelNode("Base URL", base), labelNode("模型", model), labelNode("API Key", key));
+  form.append(labelNode("Base URL", base), labelNode("逐轮候选模型", model), labelNode("Gate/Refiner 模型", refinerModel), labelNode("API Key", key));
   configuration.append(form, actionButton("保存并测试", "primary", async () => {
     try {
       await api("/api/model/configure", {
         method: "POST",
-        body: JSON.stringify({ base_url: base.value, model: model.value, api_key: key.value }),
+        body: JSON.stringify({ base_url: base.value, model: model.value, refiner_model: refinerModel.value, api_key: key.value }),
       });
       await api("/api/model/test", { method: "POST", body: "{}" });
       await renderModel();
@@ -266,7 +285,7 @@ async function renderModel() {
   automation.append(
     element("h2", "自动抽取"),
     element("p", `模型验证：${data.strict_schema_verified ? "已通过" : "未通过"} · 当前状态：${data.auto_extract ? "已开启" : "已关闭"}`, "muted"),
-    element("p", "开启即代表同意将本轮 Prompt 和最终回答发送到当前 HTTPS 模型服务用于抽取；原文只在任务内存中使用，不写入本地数据库或日志。", "muted"),
+    element("p", "开启即代表同意逐轮发送本轮 Prompt 和最终回答生成候选，并在 25 回合或 compact 检查点发送最多 40,000/80,000 字符的安全对话投影给 Gate/Refiner。原文只在任务内存中使用，不写入本地数据库或日志。", "muted"),
   );
   const actions = element("div", undefined, "actions");
   const toggle = data.auto_extract

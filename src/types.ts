@@ -49,6 +49,7 @@ export interface SessionStartRequest {
   session_id: string;
   cwd: string;
   transcript_path?: string;
+  source?: "startup" | "resume" | "clear" | "compact";
 }
 
 export interface RecallRequest {

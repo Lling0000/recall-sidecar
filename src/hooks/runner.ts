@@ -10,6 +10,7 @@ export interface HookInput {
   cwd?: unknown;
   prompt?: unknown;
   transcript_path?: unknown;
+  source?: unknown;
 }
 
 export interface HookRunOptions {
@@ -56,9 +57,20 @@ export async function runHook(
     const socketPath = options.socketPath ?? runtimePaths().socket;
 
     if (name === "session-start") {
+      const source =
+        typeof input.source === "string" &&
+        ["startup", "resume", "clear", "compact"].includes(input.source)
+          ? (input.source as "startup" | "resume" | "clear" | "compact")
+          : undefined;
       await callSidecar(
         socketPath,
-        { type: "session_start", client: "codex", session_id: sessionId, cwd },
+        {
+          type: "session_start",
+          client: "codex",
+          session_id: sessionId,
+          cwd,
+          ...(source ? { source } : {}),
+        },
         HOOK_TIMEOUT_MS.sessionStart,
       );
       return;

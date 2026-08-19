@@ -94,26 +94,32 @@ export class MemoryQueryStore {
   listPendingReviews(): PendingReview[] {
     const rows = this.core.db
       .prepare(
-        `SELECT c.id AS candidate_id,c.applied_memory_id,
+        `SELECT c.id AS candidate_id,c.action,c.applied_memory_id,
           old.id AS old_id,old.version_no AS old_version,old.content AS old_content,
           newer.id AS new_id,newer.version_no AS new_version,newer.content AS new_content,
           s.native_session_ref,t.native_turn_ref
          FROM candidates c JOIN refine_jobs j ON j.id=c.refine_job_id
          JOIN turns t ON t.id=j.turn_id JOIN sessions s ON s.id=t.session_id
+         JOIN memories m ON m.id=c.applied_memory_id
          JOIN memory_versions newer ON newer.memory_id=c.applied_memory_id
-           AND newer.version_no=c.base_version+1
-         JOIN memory_versions old ON old.memory_id=c.applied_memory_id
-           AND old.version_no=c.base_version
-         WHERE c.review_state='unverified' AND c.state='applied'
+           AND ((c.action='create' AND newer.version_no=1)
+             OR (c.action='update' AND newer.version_no=c.base_version+1))
+         LEFT JOIN memory_versions old ON c.action='update'
+           AND old.memory_id=c.applied_memory_id AND old.version_no=c.base_version
+         WHERE c.state='applied'
+           AND (c.review_state='unverified'
+             OR (c.action='create' AND c.review_state='none'))
+           AND (c.action!='create' OR m.active_version_id=newer.id)
          ORDER BY c.created_at DESC`,
       )
       .all() as unknown as ReviewRow[];
     return rows.map((value) => ({
+      action: value.action,
       candidateId: value.candidate_id,
       memoryId: value.applied_memory_id,
       oldVersionId: value.old_id,
       oldVersion: value.old_version,
-      oldCard: parseCard(value.old_content),
+      oldCard: value.old_content ? parseCard(value.old_content) : null,
       newVersionId: value.new_id,
       newVersion: value.new_version,
       newCard: parseCard(value.new_content),
@@ -138,6 +144,12 @@ export class MemoryQueryStore {
       ),
       rejected_candidates: count(
         "SELECT count(*) AS count FROM candidates WHERE action='reject'",
+      ),
+      staged_turn_candidates: count(
+        "SELECT count(*) AS count FROM turn_candidates WHERE state='staged'",
+      ),
+      failed_session_refines: count(
+        "SELECT count(*) AS count FROM session_refine_jobs WHERE state='failed'",
       ),
       remote_warnings: count(
         "SELECT count(*) AS count FROM repositories WHERE remote_warning=1",
@@ -192,11 +204,12 @@ interface VersionRow {
 }
 
 interface ReviewRow {
+  action: "create" | "update";
   candidate_id: string;
   applied_memory_id: string;
-  old_id: string;
-  old_version: number;
-  old_content: string;
+  old_id: string | null;
+  old_version: number | null;
+  old_content: string | null;
   new_id: string;
   new_version: number;
   new_content: string;

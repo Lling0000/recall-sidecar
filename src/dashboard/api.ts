@@ -201,10 +201,16 @@ export class DashboardApi {
         body.api_key === undefined || body.api_key === ""
           ? null
           : requiredString(body.api_key, "api_key", 20_000);
+      const model = requiredString(body.model, "model", 200);
+      const refinerModel =
+        body.refiner_model === undefined
+          ? model
+          : requiredString(body.refiner_model, "refiner_model", 200);
       await this.models.configure(
         requiredString(body.base_url, "base_url", 2_000),
-        requiredString(body.model, "model", 200),
+        model,
         apiKey,
+        refinerModel,
       );
       sendJson(response, 200, { ok: true });
       return true;

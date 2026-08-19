@@ -3,7 +3,11 @@ import { copyFile, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { ProjectionError, projectRollout } from "../../src/rollout/projector.js";
+import {
+  ProjectionError,
+  projectRollout,
+  projectRollouts,
+} from "../../src/rollout/projector.js";
 
 const FIXTURE = new URL("../fixtures/rollout-0.148.0-alpha.9.jsonl", import.meta.url);
 const SUBAGENT_FIXTURE = new URL(
@@ -25,6 +29,19 @@ test("projects only the exact completed target turn", async () => {
   assert.match(projection.sourceDigest, /^[a-f0-9]{64}$/);
   assert.doesNotMatch(JSON.stringify(projection), /不得读取或投影/);
   assert.doesNotMatch(JSON.stringify(projection), /last_agent_message/);
+});
+
+test("projects a checkpoint batch in one rollout pass", async () => {
+  const projections = await projectRollouts(FIXTURE.pathname, "session-user-1", [
+    "turn-previous",
+    "turn-target",
+  ]);
+  assert.deepEqual(
+    projections.map((projection) => projection.turnId),
+    ["turn-previous", "turn-target"],
+  );
+  assert.equal(projections[0]?.userPrompt, "把重试次数改成两次");
+  assert.equal(projections[1]?.previousUserPrompt, "把重试次数改成两次");
 });
 
 test("rejects subagent rollouts before extraction", async () => {

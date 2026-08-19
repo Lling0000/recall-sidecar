@@ -2,7 +2,7 @@ import type { SidecarRequest } from "../types.js";
 
 const REQUEST_KEYS = {
   dashboard_bootstrap: ["type"],
-  session_start: ["type", "client", "session_id", "cwd", "transcript_path"],
+  session_start: ["type", "client", "session_id", "cwd", "transcript_path", "source"],
   recall: ["type", "client", "session_id", "turn_id", "cwd", "prompt"],
   stop: ["type", "client", "session_id", "turn_id", "transcript_path", "cwd"],
 } as const;
@@ -41,9 +41,22 @@ export function parseSidecarRequest(value: unknown): SidecarRequest {
     if (transcript !== undefined && typeof transcript !== "string") {
       throw new Error("invalid_transcript_path");
     }
-    return transcript === undefined
-      ? { type, ...shared }
-      : { type, ...shared, transcript_path: transcript };
+    const source = record.source;
+    if (
+      source !== undefined &&
+      (typeof source !== "string" ||
+        !["startup", "resume", "clear", "compact"].includes(source))
+    ) {
+      throw new Error("invalid_session_source");
+    }
+    return {
+      type,
+      ...shared,
+      ...(transcript === undefined ? {} : { transcript_path: transcript }),
+      ...(source === undefined
+        ? {}
+        : { source: source as "startup" | "resume" | "clear" | "compact" }),
+    };
   }
   if (type === "recall") {
     return {

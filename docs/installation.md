@@ -23,7 +23,7 @@ node dist/cli.js install
 node "$HOME/Library/Application Support/codex-local-memory/runtime/cli.js" dashboard url
 ```
 
-命令返回含一次性 URL fragment 的本机看板地址。看板只有待核对、记忆、模型、健康四页。模型页填写 HTTPS Base URL、模型和 API Key；Key 只进入 macOS Keychain，不支持 HTTP loopback 本地模型。点击「保存并测试」会用正式 Schema 验证模型；通过后，唯一的自动抽取开关用于同时同意或撤回本轮 Prompt 与最终回答外发。
+命令返回含一次性 URL fragment 的本机看板地址。看板只有待核对、记忆、模型、健康四页。模型页填写 HTTPS Base URL、逐轮候选模型、Gate/Refiner 模型和 API Key；Key 只进入 macOS Keychain，不支持 HTTP loopback 本地模型。点击「保存并测试」会分别验证候选、Gate、Refiner 三份 strict Schema；通过后，唯一开关用于同意逐轮 Prompt/最终回答，以及 25 回合或 compact 检查点最多 40,000/80,000 字符的安全投影外发。
 
 卸载：
 
