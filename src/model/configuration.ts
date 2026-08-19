@@ -7,7 +7,6 @@ export function createModelConfiguration(
   baseUrl: string,
   model: string,
   allowLoopbackHttp = false,
-  disableThinking = false,
 ): ModelConfiguration {
   const normalizedModel = model.trim();
   if (!normalizedModel || normalizedModel.length > 200) {
@@ -26,7 +25,6 @@ export function createModelConfiguration(
     max_retries: 1,
     daily_extract_limit: 100,
     allow_loopback_http: allowLoopbackHttp,
-    disable_thinking: disableThinking,
   };
 }
 

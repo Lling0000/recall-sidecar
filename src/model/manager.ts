@@ -25,14 +25,8 @@ export class ModelManager {
     model: string,
     apiKey: string | null,
     allowLoopbackHttp = false,
-    disableThinking = false,
   ): Promise<void> {
-    const configuration = createModelConfiguration(
-      baseUrl,
-      model,
-      allowLoopbackHttp,
-      disableThinking,
-    );
+    const configuration = createModelConfiguration(baseUrl, model, allowLoopbackHttp);
     if (!apiKey && !(await this.keyProvider.get())) {
       throw new Error("api_key_required");
     }

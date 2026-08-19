@@ -209,7 +209,6 @@ export class DashboardApi {
         requiredString(body.model, "model", 200),
         apiKey,
         body.allow_loopback_http === true,
-        body.disable_thinking === true,
       );
       sendJson(response, 200, { ok: true });
       return true;

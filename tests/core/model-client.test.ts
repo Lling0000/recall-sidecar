@@ -133,28 +133,6 @@ test("one bounded 5xx retry consumes two daily attempts", async () => {
   assert.equal(budget.attempts, 2);
 });
 
-test("thinking is disabled only when explicitly configured", async () => {
-  let requestBody = "";
-  const client = new StrictModelClient(new Budget(), async (_url, init) => {
-    requestBody = String(init?.body);
-    return structuredResponse(SKIP);
-  });
-  const configuration = createModelConfiguration(
-    "https://model.example/v1",
-    "thinking-model",
-    false,
-    true,
-  );
-  await client.extract(configuration, "secret", {
-    user_prompt: "hello",
-    final_answer: "hello",
-    compare_cards: [],
-  });
-  assert.deepEqual((JSON.parse(requestBody) as { thinking?: unknown }).thinking, {
-    type: "disabled",
-  });
-});
-
 test("P0-11 redirect is rejected and Authorization is never forwarded", async () => {
   let calls = 0;
   const client = new StrictModelClient(new Budget(), async () => {
