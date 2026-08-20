@@ -219,7 +219,9 @@ test("health only counts unresolved failed checkpoints", async () => {
     const failed = database.sessionRefines.claimNext();
     assert.ok(failed);
     database.sessionRefines.fail(failed.jobId, "model_invalid_structured_output");
-    assert.equal(database.healthSummary().failed_session_refines, 1);
+    const failedHealth = database.healthSummary();
+    assert.equal(failedHealth.failed_session_refines, 1);
+    assert.equal("failed_jobs" in failedHealth, false);
 
     assert.ok(database.sessionRefines.enqueue(session.id, session.repoId, "compact"));
     const retry = database.sessionRefines.claimNext();

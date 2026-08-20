@@ -28,6 +28,7 @@
 - 模型复测：`gpt-5.5` 的 Gate、Refiner、知识整合三份 strict Schema 共 3 次请求通过；知识整合再从两张同范围生成代码坑点与一张无关 Socket 决策中，只输出前两张的无损 merge，一次通过 ID/version/范围校验。全部为隔离合成内容，不写正式数据库。Stop 与 UserPromptSubmit 不调用模型。
 - 项目隐性知识回归：Gate 从隐藏生成约束、普通文件事实和一次性格式要求中只选中隐藏约束；Refiner 生成中文 `pitfall`。首次矛盾 Gate 输出被严格语义校验拒绝，强化不变量后再次通过；未写正式数据库。
 - 正式运行状态：`gpt-5.5`、三份 strict Schema 已验证、`auto_extract=true`、SQLite `ok`、failed/pending consolidation 均为 0；旧版 5 张不兼容四字段卡已按用户授权通过 Sidecar 永久清除。随后正式 Gate/Refiner 已为 cloud-server 形成 4 张五字段 active 知识卡并进入待核对，证明端到端写回可用。
+- 健康页只展示当前可操作故障：已被后续检查点处理的失败留在 audit 历史，不再计入 `failed_session_refines`；旧逐轮模型留下的废弃 `failed_jobs` 指标已移除，pending turn 作为信息而非告警。
 - 最终 lint、结构检查、类型检查、构建和文档一致性：全部通过。
 
 ## 剩余 P1

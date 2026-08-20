@@ -249,9 +249,17 @@ async function renderHealth() {
   setPage("health", "系统健康", "Hook、Sidecar、SQLite、模型与 CLI 兼容状态。");
   const health = await api("/api/health");
   const list = element("div", undefined, "health-list");
+  const informational = new Set([
+    "hooks",
+    "tested_cli_versions",
+    "rollout_compatibility",
+    "pending_checkpoint_turns",
+    "pending_consolidations",
+  ]);
   for (const [key, value] of Object.entries(health)) {
     const row = element("div", undefined, "health-row");
-    const healthy = value === "ok" || value === true || value === 0;
+    const healthy =
+      value === "ok" || value === true || value === 0 || informational.has(key);
     row.append(icon(healthy ? "check-circle" : "warning-circle"), element("div", key, "health-key"), element("div", typeof value === "object" ? JSON.stringify(value) : String(value), "health-value"));
     list.append(row);
   }

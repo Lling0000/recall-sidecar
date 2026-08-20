@@ -136,9 +136,6 @@ export class MemoryQueryStore {
       auto_recall: this.core.getSetting("auto_recall") === "true",
       auto_extract: this.core.extractionEnabled(),
       strict_schema_verified: this.core.getSetting("strict_schema_verified") === "true",
-      failed_jobs: count(
-        "SELECT count(*) AS count FROM refine_jobs WHERE state='failed'",
-      ),
       stale_candidates: count(
         "SELECT count(*) AS count FROM candidates WHERE state='stale'",
       ),
