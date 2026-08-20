@@ -1,7 +1,7 @@
 import { validateMemoryCard } from "../security/memory-card.js";
 import { redactSecrets } from "../security/redact.js";
 import type { MemoryCard } from "../types.js";
-import { ModelError } from "./client.js";
+import { ModelError } from "./error.js";
 import { MAX_REFINER_EDITS } from "./session-contract.js";
 import type {
   SessionGateInput,
@@ -9,7 +9,6 @@ import type {
   SessionRefinerEdit,
   SessionRefinerInput,
   SessionRefinerResult,
-  StagedTurnCandidate,
 } from "./session-types.js";
 
 export function prepareSessionInput<T extends SessionGateInput>(
@@ -17,13 +16,21 @@ export function prepareSessionInput<T extends SessionGateInput>(
   maxChars: number,
 ): T {
   const prepared = redactInput(input);
-  while (JSON.stringify(prepared).length > maxChars && prepared.turns.length > 1) {
-    const removed = prepared.turns.shift();
-    if (removed) {
-      prepared.candidates = prepared.candidates.filter(
-        (candidate) => candidate.turn_id !== removed.turn_id,
-      );
-    }
+  while (
+    JSON.stringify(prepared).length > maxChars &&
+    prepared.turns.some((turn) => !prepared.eligible_turn_ids.includes(turn.turn_id))
+  ) {
+    const index = prepared.turns.findIndex(
+      (turn) => !prepared.eligible_turn_ids.includes(turn.turn_id),
+    );
+    if (index >= 0) prepared.turns.splice(index, 1);
+  }
+  while (
+    JSON.stringify(prepared).length > maxChars &&
+    prepared.eligible_turn_ids.length > 1
+  ) {
+    const removed = prepared.eligible_turn_ids.pop();
+    prepared.turns = prepared.turns.filter((turn) => turn.turn_id !== removed);
   }
   while (
     JSON.stringify(prepared).length > maxChars &&
@@ -39,19 +46,19 @@ export function prepareSessionInput<T extends SessionGateInput>(
 
 export function validateGateResult(
   value: unknown,
-  candidates: readonly StagedTurnCandidate[],
+  eligibleTurnIds: readonly string[],
 ): SessionGateResult {
-  const record = exactObject(value, ["should_refine", "candidate_turn_ids"]);
+  const record = exactObject(value, ["should_refine", "selected_turn_ids"]);
   if (typeof record.should_refine !== "boolean") {
     throw new ModelError("model_invalid_structured_output");
   }
-  if (!Array.isArray(record.candidate_turn_ids)) {
+  if (!Array.isArray(record.selected_turn_ids)) {
     throw new ModelError("model_invalid_structured_output");
   }
-  const allowed = new Set(candidates.map((candidate) => candidate.turn_id));
-  const selected = record.candidate_turn_ids;
+  const allowed = new Set(eligibleTurnIds);
+  const selected = record.selected_turn_ids;
   if (
-    selected.length > 25 ||
+    selected.length > 8 ||
     selected.some((id) => typeof id !== "string" || !allowed.has(id)) ||
     new Set(selected).size !== selected.length ||
     (!record.should_refine && selected.length > 0) ||
@@ -61,7 +68,7 @@ export function validateGateResult(
   }
   return {
     should_refine: record.should_refine,
-    candidate_turn_ids: selected as string[],
+    selected_turn_ids: selected as string[],
   };
 }
 
@@ -114,10 +121,7 @@ function redactInput<T extends SessionGateInput>(input: T): T {
       user_prompt: redactSecrets(turn.user_prompt),
       final_answer: redactSecrets(turn.final_answer),
     })),
-    candidates: input.candidates.map((candidate) => ({
-      ...candidate,
-      memory: candidate.memory ? redactCard(candidate.memory) : null,
-    })),
+    eligible_turn_ids: [...input.eligible_turn_ids],
     active_memories: input.active_memories.map((memory) => ({
       id: memory.id,
       version: memory.version,
@@ -128,9 +132,10 @@ function redactInput<T extends SessionGateInput>(input: T): T {
 
 function redactCard(card: MemoryCard): MemoryCard {
   return {
+    kind: card.kind,
     title: redactSecrets(card.title),
-    wrong_behavior: redactSecrets(card.wrong_behavior),
-    correct_behavior: redactSecrets(card.correct_behavior),
+    knowledge: redactSecrets(card.knowledge),
+    rationale: redactSecrets(card.rationale),
     applicability: redactSecrets(card.applicability),
   };
 }

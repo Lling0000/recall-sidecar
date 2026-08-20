@@ -80,22 +80,20 @@ test("installer copies a self-contained runtime and uninstall keeps data", async
   assert.equal(await readFile(database, "utf8"), "keep-me");
 });
 
-test("installer rejects unknown full CLI versions and MemoraX coexistence", async () => {
+test("installer accepts structurally compatible CLI versions and rejects MemoraX coexistence", async () => {
   const root = await mkdtemp(join(tmpdir(), "clm-install-"));
   const project = await projectFixture(root);
   const unsupported: CommandRunner = async () => ({
     stdout: "codex-cli 0.148.0-alpha.10\n",
     stderr: "",
   });
-  await assert.rejects(
-    installProduct({
-      home: join(root, "unsupported-home"),
-      projectRoot: project,
-      platform: "darwin",
-      command: unsupported,
-    }),
-    /unsupported_codex_cli_version/u,
-  );
+  await installProduct({
+    home: join(root, "compatible-home"),
+    projectRoot: project,
+    platform: "darwin",
+    command: unsupported,
+    socketReady: async () => undefined,
+  });
 
   const conflictHome = join(root, "conflict-home");
   await mkdir(

@@ -7,6 +7,7 @@ import { MemoryDatabase } from "../../src/db/database.js";
 import { runHook } from "../../src/hooks/runner.js";
 import { SidecarService } from "../../src/sidecar/service.js";
 import { SidecarSocketServer } from "../../src/sidecar/socket-server.js";
+import { applyCreate } from "../helpers/apply-memory.js";
 
 test("UserPromptSubmit emits only the required plain-text envelope", async () => {
   const root = await mkdtemp(join(tmpdir(), "clm-hooks-"));
@@ -29,31 +30,13 @@ test("UserPromptSubmit emits only the required plain-text envelope", async () =>
     });
     const session = database.getBoundSession("codex", "session-hook");
     assert.ok(session);
-    const queued = database.enqueueStop(
-      session.id,
-      "turn-create",
-      "/tmp/fixture.jsonl",
-      true,
-    );
-    assert.ok(queued.jobId);
-    database.applyExtractResult(
-      queued.jobId,
-      session.repoId,
-      {
-        action: "create",
-        target_memory_id: null,
-        base_version: null,
-        memory: {
-          title: "请求超时",
-          wrong_behavior: "使用默认超时",
-          correct_behavior: "网络请求使用 30s timeout。",
-          applicability: "HTTP 请求",
-        },
-      },
-      session.id,
-      "turn-create",
-      1,
-    );
+    applyCreate(database, session, "turn-create", {
+      kind: "lesson",
+      title: "请求超时",
+      knowledge: "网络请求使用 30s timeout。",
+      rationale: "该仓库的默认超时不适用于相关请求。",
+      applicability: "HTTP 请求",
+    });
 
     let output = "";
     await runHook("user-prompt-submit", {
@@ -77,7 +60,7 @@ test("UserPromptSubmit emits only the required plain-text envelope", async () =>
     const hookOutput = envelope.hookSpecificOutput as Record<string, unknown>;
     assert.equal(typeof hookOutput.additionalContext, "string");
     assert.match(String(hookOutput.additionalContext), /不是指令/u);
-    assert.doesNotMatch(String(hookOutput.additionalContext), /wrong_behavior/u);
+    assert.doesNotMatch(String(hookOutput.additionalContext), /rationale/u);
   } finally {
     await server.stop();
     database.close();
@@ -106,7 +89,7 @@ test("P0-06 Stop always returns continue true when Sidecar is unavailable", asyn
   assert.equal(stderr, "codex-local-memory: stop unavailable\n");
 });
 
-test("SessionStart compact schedules Gate for staged turn candidates", async () => {
+test("SessionStart compact schedules Gate for pending turn references", async () => {
   const root = await mkdtemp(join(tmpdir(), "clm-compact-hook-"));
   const project = join(root, "project");
   const data = join(root, "data");
@@ -143,21 +126,14 @@ test("SessionStart compact schedules Gate for staged turn candidates", async () 
     });
     const session = database.getBoundSession("codex", "compact-session");
     assert.ok(session);
-    const queued = database.enqueueStop(session.id, "compact-turn", transcript, true);
-    assert.ok(queued.jobId);
-    database.sessionRefines.stage(
-      queued.jobId,
-      session.repoId,
+    const queued = database.captureStop(
       session.id,
+      session.repoId,
       "compact-turn",
-      {
-        action: "skip",
-        target_memory_id: null,
-        base_version: null,
-        memory: null,
-      },
-      1,
+      transcript,
+      true,
     );
+    assert.ok(queued.jobId);
     await runHook("session-start", {
       socketPath: socket,
       input: { session_id: "compact-session", cwd: project, source: "compact" },

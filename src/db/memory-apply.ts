@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type {
+  CheckpointTurnSource,
   SessionRefinerEdit,
-  StagedTurnCandidate,
 } from "../model/session-types.js";
 import { validateMemoryCard } from "../security/memory-card.js";
-import type { ExtractResult, MemoryCard } from "../types.js";
+import type { MemoryCard } from "../types.js";
 import type { DatabaseCore } from "./core.js";
 import { replaceMemoryFts } from "./fts-writer.js";
 import { now, row, topicKey } from "./helpers.js";
@@ -19,62 +19,46 @@ export class MemoryApplyStore {
     private readonly jobs: JobStore,
   ) {}
 
-  apply(
-    jobId: string,
-    repoId: string,
-    result: ExtractResult,
-    sourceSessionId: string,
-    sourceTurnRef: string,
-    revision: number,
-  ): AppliedCandidate {
-    return this.core.transaction(() => {
-      const existing = this.existing(jobId);
-      if (existing) return existing;
-      if (result.action === "create") {
-        return this.create(
-          jobId,
-          repoId,
-          validateMemoryCard(result.memory),
-          sourceSessionId,
-          sourceTurnRef,
-          revision,
-        );
-      }
-      if (result.action === "update") {
-        return this.update(
-          jobId,
-          repoId,
-          result,
-          validateMemoryCard(result.memory),
-          sourceSessionId,
-          sourceTurnRef,
-          revision,
-        );
-      }
-      return this.skip(jobId, repoId, result.action, revision);
-    });
-  }
-
   applySessionRefinement(
     repoId: string,
     sessionId: string,
     edits: readonly SessionRefinerEdit[],
-    candidates: readonly StagedTurnCandidate[],
+    candidates: readonly CheckpointTurnSource[],
   ): AppliedCandidate[] {
+    const stale = edits.filter(
+      (edit) => edit.action === "update" && !this.updateIsCurrent(repoId, edit),
+    );
+    if (stale.length > 0) {
+      this.core.transaction(() => {
+        for (const edit of stale) {
+          const source = candidates.find(
+            (candidate) => candidate.turn_id === edit.source_turn_id,
+          );
+          if (
+            source &&
+            edit.target_memory_id &&
+            edit.base_version &&
+            !this.existing(source.job_id)
+          ) {
+            recordStaleCandidate(
+              this.core,
+              this.jobs,
+              source.job_id,
+              repoId,
+              edit.target_memory_id,
+              edit.base_version,
+              validateMemoryCard(edit.memory),
+              2,
+            );
+          }
+        }
+      });
+      throw new Error("session_refine_stale");
+    }
     return applySessionEdits(edits, candidates, {
       transaction: (operation) => this.core.transaction(operation),
       existing: (jobId) => this.existing(jobId),
-      updateIsCurrent: (edit) => {
-        const target = edit.target_memory_id
-          ? this.activeTarget(edit.target_memory_id)
-          : null;
-        return Boolean(
-          target &&
-            target.repo_id === repoId &&
-            target.state === "active" &&
-            target.version_no === edit.base_version,
-        );
-      },
+      updateIsCurrent: (edit) => this.updateIsCurrent(repoId, edit),
       create: (source, edit) => {
         if (edit.target_memory_id !== null || edit.base_version !== null) {
           throw new Error("session_refine_create_semantics");
@@ -93,12 +77,8 @@ export class MemoryApplyStore {
         return this.update(
           source.job_id,
           repoId,
-          {
-            action: "update",
-            target_memory_id: edit.target_memory_id,
-            base_version: edit.base_version,
-            memory: card,
-          },
+          edit.target_memory_id,
+          edit.base_version,
           card,
           sessionId,
           edit.source_turn_id,
@@ -136,31 +116,6 @@ export class MemoryApplyStore {
       state: candidate.state,
       memoryId: candidate.applied_memory_id,
       version,
-    };
-  }
-
-  private skip(
-    jobId: string,
-    repoId: string,
-    action: ExtractResult["action"],
-    revision: number,
-  ): AppliedCandidate {
-    const candidateId = randomUUID();
-    this.core.db
-      .prepare(
-        `INSERT INTO candidates(
-          id,refine_job_id,repo_id,action,target_id,base_version,revision,
-          content,state,review_state,created_at
-        ) VALUES (?,?,?,?,?,?,?,NULL,'skipped','none',?)`,
-      )
-      .run(candidateId, jobId, repoId, action, null, null, revision, now());
-    this.jobs.complete(jobId);
-    this.core.audit(`extract_${action}`, candidateId, { repo_id: repoId });
-    return {
-      candidateId,
-      state: "skipped",
-      memoryId: null,
-      version: null,
     };
   }
 
@@ -221,14 +176,13 @@ export class MemoryApplyStore {
   private update(
     jobId: string,
     repoId: string,
-    result: ExtractResult,
+    targetId: string | null,
+    baseVersion: number | null,
     card: MemoryCard,
     sourceSessionId: string,
     sourceTurnRef: string,
     revision: number,
   ): AppliedCandidate {
-    const targetId = result.target_memory_id;
-    const baseVersion = result.base_version;
     if (!targetId || !baseVersion) throw new Error("update_semantics");
     const target = this.activeTarget(targetId);
     if (
@@ -314,6 +268,18 @@ export class MemoryApplyStore {
            WHERE m.id=? AND d.memory_id IS NULL`,
         )
         .get(memoryId),
+    );
+  }
+
+  private updateIsCurrent(repoId: string, edit: SessionRefinerEdit): boolean {
+    const target = edit.target_memory_id
+      ? this.activeTarget(edit.target_memory_id)
+      : null;
+    return Boolean(
+      target &&
+        target.repo_id === repoId &&
+        target.state === "active" &&
+        target.version_no === edit.base_version,
     );
   }
 

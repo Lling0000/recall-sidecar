@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { lstat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PLUGIN_DIRECTORY_NAME, SUPPORTED_CODEX_CLI_VERSIONS } from "../constants.js";
+import { PLUGIN_DIRECTORY_NAME } from "../constants.js";
 import { type CommandRunner, runMacosCommand } from "./command-runner.js";
 import { stageInstallationFiles } from "./file-install.js";
 import {
@@ -98,14 +98,7 @@ async function supportedCodexVersion(command: CommandRunner): Promise<string> {
   );
   const match = stdout.trim().match(/^codex-cli\s+(.+)$/u);
   const version = match?.[1];
-  if (
-    !version ||
-    !SUPPORTED_CODEX_CLI_VERSIONS.includes(
-      version as (typeof SUPPORTED_CODEX_CLI_VERSIONS)[number],
-    )
-  ) {
-    throw new Error("unsupported_codex_cli_version");
-  }
+  if (!version) throw new Error("invalid_codex_cli_version");
   return version;
 }
 

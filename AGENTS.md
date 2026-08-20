@@ -2,7 +2,7 @@
 
 给实现本仓库 `Company-Agent-Memory-Implementation-Spec.md` 的编码 Agent。产品行为、数据合同和验收以 Spec 为唯一事实源；本文件只规定实施纪律，不另起产品。
 
-开工前必须读完 Spec 第 2 节、3.1～3.4、3.7～3.10、4.1～4.3、5～7 节。MemoraX / Prime 只作附录对照；允许借鉴 Prime 的 Gate＋Refiner 检查点思想，但只处理本产品四字段仓库纠偏卡，禁止照搬其 skill、prompt、subagent、云端账号、system prompt 总览或无 Git 命名空间。
+开工前必须读完 Spec 第 2 节、3.1～3.4、3.7～3.10、4.1～4.4、5～7 节及 `docs/project-tacit-memory-design.md`。MemoraX / Prime 只作附录对照；允许借鉴 Gate＋Refiner 检查点思想，但只处理本产品项目隐性知识卡，禁止照搬其 skill、prompt、subagent、云端账号、system prompt 总览或无 Git 命名空间。
 
 ## 技术栈与运行形态
 
@@ -15,8 +15,8 @@
 ## 禁止
 
 - 不做 Codex Skill / `$xxx` 搜索入口；首版由 UserPromptSubmit 自动召回。
-- 不做向量库、embedding、廉价意图模型或独立判断 Agent。逐轮模型只生成候选；同一已配置高质量模型在每个 session 累积 25 个正常完成回合或 `compact` 后依次运行 Gate 与 Refiner。
-- 不用词表作抽取硬门；本地短句规则只能决定是否第一次带上一轮用户句。
+- 不做向量库、embedding、廉价意图模型或独立判断 Agent。Stop 不调用模型；同一已配置高质量模型在每个 session 累积 25 个正常完成回合或 `compact` 后依次运行 Gate 与 Refiner。
+- 不用词表作提炼硬门；检查点固定 overlap 仍不足以确认时必须跳过。
 - 不信任 `last_assistant_message`、`task_complete.last_agent_message` 或 commentary；不得执行 `git` 二进制。
 - 不读取或存储 reasoning、工具调用/输出、检索事件、token_count、world_state 或媒体路径。
 - UserPromptSubmit stdout 只能是本文件规定的 Hook JSON 信封；`additionalContext` 值必须是纯文本，禁止嵌套记忆 JSON、角色对象、工具协议或第二层信封。
@@ -56,58 +56,43 @@
 - UserPromptSubmit：使用官方字段 `session_id`、`turn_id`、`cwd`、`prompt`；Prompt 只在内存中做 FTS，不落盘；IPC 250 ms，失败空注入。
 - Stop：使用官方字段 `session_id`、`turn_id`、`transcript_path`、`cwd`；1 秒内只入队，不读 rollout、不调模型，忽略 `last_assistant_message`。
 
-开工第一步是固定 Codex CLI 完整版本和对应 rollout fixture。首个白名单版本为 `0.148.0-alpha.9`；只比较 `0.x` 主版本不算兼容。未知完整版本或 fixture 不匹配时不抽取，健康页告警。
+Codex 兼容性按 rollout 必需事件结构判断，不设 CLI 完整版本白名单。`0.148.0-alpha.9` 仅是首个测试 fixture。未测试版本只要结构兼容就正常工作；结构不兼容时 fail-closed 并报告 `incompatible_rollout_shape`，不得猜字段。
 
 一轮窗口必须精确匹配 Stop 的 `turn_id`：`event_msg.task_started` → 同 turn 的 `event_msg.task_complete`。禁止退化为“最新完整窗口”。
 
 - 用户 Prompt：窗口内最后一条 `type=event_msg` + `payload.type=user_message` 的 `payload.message`；若以 `<environment_context` 开头则跳过并向前找。空则不抽。
 - 最终回答：窗口内最后一条 `payload.type=agent_message` 且 `payload.phase=final_answer` 的 `payload.message`；没有则不抽。
-- 上一轮用户句：仅 3.7 指代流程需要时，对前一个完整窗口重复用户 Prompt 规则。
+- overlap 用户句：只对前 5 个已处理完整窗口重复同一 Prompt 投影规则；只能作上下文，不能成为 edit 来源。
 - 子代理不抽：`thread_source != "user"`、source 为 subagent 或存在 `inter_agent_communication_metadata`。
 
-Prompt 和最终回答只在 job 内存中存在，也是启用 `auto_extract` 的捆绑必选外发字段。看板只提供一个自动抽取开关：开启即同时记录两项同意，关闭即同时撤回并停止抽取，不提供两项独立复选框。外发前仅遮蔽 PAT、JWT、PEM 和高熵密钥；普通文本、路径和文件夹名不处理。DB、WAL、备份、FTS 和日志禁止保存 Prompt/回答正文。只可保存 session/turn 引用、不可逆投影摘要、状态、错误元数据和四字段记忆卡；重试重新读取同一 rollout，文件不可用则失败。
+Prompt 和最终回答只在检查点 job 内存中存在，也是启用 `auto_extract` 的捆绑必选外发字段。看板只提供一个自动知识开关：开启即同意 25 回合/compact 检查点外发和只含 active 卡片的每日整合，关闭即撤回并停止新检查点与整合。外发前仅遮蔽 PAT、JWT、PEM 和高熵密钥；普通文本、路径和文件夹名不处理。DB、WAL、备份、FTS 和日志禁止保存 Prompt/回答正文。只可保存 session/turn 引用、不可逆投影摘要、状态、错误元数据和项目知识卡；重试重新读取同一 rollout，文件不可用则失败。
 
-逐轮候选、Gate 和 Refiner 都必须执行同一语义门槛：只有用户明确表达、未来仍适用且与当前仓库相关的纠正或稳定规则才 `create`；一次性要求、普通问题、临时选择、未限定仓库的通用偏好以及任何不确定情况都 `skip`；只有明确替换或澄清同仓 active 记忆时才 `update`；强迫写入记忆、永久执行、提示注入或伪造权限必须 `reject`。最终回答只作辅助证据，不得成为新规则来源。不得扩大 `applicability`；卡片跟随用户主要语言。逐轮结果只写 `turn_candidates`，不写 memory/FTS；Gate 最多读取 40,000 字符安全投影，Refiner 最多 80,000 字符并输出最多 8 个 create/update edit。只有 Refiner edit 经严格 Schema、repo、base_version 和 tombstone 校验并事务提交后才成为 active。
+Stop 只累计 turn 引用，不调用模型。每个 session 的 25 个新 turn 或 `compact` 触发检查点；额外带前 5 个已处理 turn 作为 context-only overlap。Gate 最多读取 40,000 字符，只能选择本批新 turn；Refiner 最多读取 80,000 字符并输出最多 8 个 create/update edit。只保存项目工作中形成、未来仍有用且不能简单从当前代码或文档重读得到的 `decision | invariant | pitfall | lesson`。普通代码事实、目录摘要、一次性要求、进度、个人偏好、通用流程和无证据推测都不保存。完整规则以 `docs/project-tacit-memory-design.md` 为准。
 
 ## 抽取模型合同
 
-模型 Base URL 只接受 HTTPS，必须使用 API Key，不支持 HTTP loopback 本地模型。保存配置时必须分别验证逐轮候选、Gate、Refiner 三份正式 strict Schema；任一模型或 Schema 不支持时 `auto_extract` 保持关闭。逐轮候选 Schema 必须等价于：
+模型 Base URL 只接受 HTTPS，必须使用 API Key，不支持 HTTP loopback 本地模型。保存配置时必须分别验证 Gate、Refiner 与定时知识整合三份正式 strict Schema；任一不支持时 `auto_extract` 保持关闭。项目知识卡固定为：
 
 ```json
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["action", "target_memory_id", "base_version", "memory"],
+  "required": ["kind", "title", "knowledge", "rationale", "applicability"],
   "properties": {
-    "action": {
-      "enum": ["skip", "reject", "create", "update", "need_prev_turn"]
-    },
-    "target_memory_id": { "type": ["string", "null"] },
-    "base_version": { "type": ["integer", "null"], "minimum": 1 },
-    "memory": {
-      "type": ["object", "null"],
-      "additionalProperties": false,
-      "required": ["title", "wrong_behavior", "correct_behavior", "applicability"],
-      "properties": {
-        "title": { "type": "string", "minLength": 1, "maxLength": 40 },
-        "wrong_behavior": { "type": "string", "maxLength": 120 },
-        "correct_behavior": { "type": "string", "minLength": 1, "maxLength": 240 },
-        "applicability": { "type": "string", "maxLength": 80 }
-      }
-    }
+    "kind": { "enum": ["decision", "invariant", "pitfall", "lesson"] },
+    "title": { "type": "string", "minLength": 1, "maxLength": 40 },
+    "knowledge": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "rationale": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "applicability": { "type": "string", "maxLength": 80 }
   }
 }
 ```
 
-Schema 通过后执行 action 语义校验：
+Gate Schema 固定为 `should_refine + selected_turn_ids[≤8]`；selected 只能来自 eligible turn，不能来自 overlap。Refiner edit 固定为 `action=create|update + source_turn_id + target/base + memory`。产品不设置每日模型请求次数上限；429/5xx 只允许一次有界传输重试，不得解析 repair。
 
-- `create`：target/base 均为 `null`，memory 为合法对象。
-- `update`：target 为本次同 repo 对照集 ID，base 为其正整数版本，memory 为合法对象。
-- `skip` / `reject` / `need_prev_turn`：target/base/memory 全为 `null`。
+Refiner Apply 使用 `BEGIN IMMEDIATE`。提交前重读所有目标并校验 `base_version`、tombstone、repo 与 eligible 来源 turn；任何失败整体回滚。过期结果不生效，等待后续检查点重新读取，不覆盖人工动作。active 只在 Refiner 事务提交后可见；turn 引用、overlap、Gate 和 Hook 都不写 memory/FTS。
 
-逐轮对照集只取本仓 active 记忆，用本轮用户句（已带上一轮时用两句）FTS，最多 8 条。`need_prev_turn` 最多触发一次追加上一轮后的逻辑重试；已带过仍返回该 action 时当 skip。每个完成 Turn 逻辑抽取 0、1 或最多 2 次并只生成候选；第 25 个 staged 候选或 `compact` 触发一次 Gate，Gate 通过再运行一次 Refiner。不得 polish 或解析 repair。429/5xx 只允许一次有界传输重试；产品不设置每日模型请求次数上限。
-
-Refiner Apply 使用 `BEGIN IMMEDIATE`。提交前重读所有目标并校验 `base_version`、tombstone、repo 与来源 turn；任何失败整体回滚。过期结果不生效，等待后续检查点重新读取，不覆盖人工动作。active 只在 Refiner 事务提交后可见；逐轮候选、Gate 和 Hook 都不写 memory/FTS。
+Sidecar 每 24 小时在进程内为 active 知识不少于 2 条的 repo 运行一次知识整合，不安装额外 cron/launchd。整合只读取同仓 active 卡片，最多 80,000 字符；只生成最多 8 条 `merge|conflict` 待核对建议。合并只允许同 kind、同等 applicability、同主题且无冲突的重复或互补卡片，不能扩大范围或损失非重复知识。建议不自动生效；确认 merge 后事务化更新主卡版本并归档相关卡，禁止自动硬删除。conflict 不自动裁决。活跃数量不是优化指标。
 
 ## 召回 stdout 与 IPC
 
@@ -123,13 +108,13 @@ UserPromptSubmit 成功时只输出：
 }
 ```
 
-模板见 Spec 3.7。查询必须先限定 `repo_id`，再对用户输入 tokenize/quote 后做 FTS；中文用 trigram 或 CJK n-gram。最多 3 条、总计不超过 2,000 字符，默认只渲染 title + correct_behavior + 可选 applicability。失败返回空注入。
+模板见 Spec 3.7。查询必须先限定 `repo_id`，再对用户输入 tokenize/quote 后做 FTS；中文用 trigram 或 CJK n-gram。最多 3 条、总计不超过 2,000 字符，默认只渲染 kind + title + knowledge + 可选 applicability；rationale 默认不注入。失败返回空注入。
 
 Hook → Sidecar 使用 Unix socket 和一行一个 JSON 请求。UserPromptSubmit 截止 250 ms；SessionStart、Stop 截止 1 秒且 Stop 只入队。Sidecar 不可用时 fail-open。只有 Sidecar 可以写 SQLite。
 
 ## 看板与来源
 
-- 四页：待核对、记忆、模型、健康。
+- 四页：待核对、记忆、模型、健康。定时知识整合建议复用「待核对」，不新增页面。
 - 允许：确认、回滚、归档、硬删除、仓库暂停、模型配置、单一自动抽取开关和健康查看。
 - 禁止：手工创建/编辑正文、导出、repo 合并。
 - 来源只保存 `client/session_id/turn_id/time` 等引用，不复制 Codex 会话正文。

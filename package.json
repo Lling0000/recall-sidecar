@@ -1,7 +1,7 @@
 {
   "name": "codex-local-memory",
   "version": "0.1.0",
-  "description": "Repository-scoped local correction memory for Codex on macOS",
+  "description": "Repository-scoped local tacit knowledge sidecar for coding agents",
   "type": "module",
   "private": true,
   "engines": {

@@ -1,6 +1,6 @@
 import type {
+  CheckpointTurnSource,
   SessionRefinerEdit,
-  StagedTurnCandidate,
 } from "../model/session-types.js";
 import type { AppliedCandidate } from "./types.js";
 
@@ -8,13 +8,13 @@ interface SessionApplyHandlers {
   transaction<T>(operation: () => T): T;
   existing(jobId: string): AppliedCandidate | null;
   updateIsCurrent(edit: SessionRefinerEdit): boolean;
-  create(source: StagedTurnCandidate, edit: SessionRefinerEdit): AppliedCandidate;
-  update(source: StagedTurnCandidate, edit: SessionRefinerEdit): AppliedCandidate;
+  create(source: CheckpointTurnSource, edit: SessionRefinerEdit): AppliedCandidate;
+  update(source: CheckpointTurnSource, edit: SessionRefinerEdit): AppliedCandidate;
 }
 
 export function applySessionEdits(
   edits: readonly SessionRefinerEdit[],
-  candidates: readonly StagedTurnCandidate[],
+  candidates: readonly CheckpointTurnSource[],
   handlers: SessionApplyHandlers,
 ): AppliedCandidate[] {
   return handlers.transaction(() => {

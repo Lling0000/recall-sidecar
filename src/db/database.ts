@@ -1,10 +1,12 @@
 import { dirname, join } from "node:path";
 import type {
+  CheckpointTurnSource,
   SessionRefinerEdit,
-  StagedTurnCandidate,
 } from "../model/session-types.js";
-import type { ExtractResult, RepoIdentity } from "../types.js";
+import type { RepoIdentity } from "../types.js";
 import { BackupStore } from "./backup-store.js";
+import { KnowledgeConsolidationAdmin } from "./consolidation-admin.js";
+import { KnowledgeConsolidationStore } from "./consolidation-store.js";
 import { DatabaseCore } from "./core.js";
 import { JobStore } from "./job-store.js";
 import { MemoryAdminStore } from "./memory-admin.js";
@@ -16,11 +18,11 @@ import { SessionRefineStore } from "./session-refine-store.js";
 import type {
   AppliedCandidate,
   BoundSession,
-  ClaimedJob,
   EnqueuedJob,
   ListedMemory,
   ListedRepository,
   ListedVersion,
+  PendingConsolidationReview,
   PendingReview,
 } from "./types.js";
 
@@ -33,7 +35,9 @@ export class MemoryDatabase {
   private readonly applyStore: MemoryApplyStore;
   private readonly admin: MemoryAdminStore;
   readonly sessionRefines: SessionRefineStore;
+  readonly consolidations: KnowledgeConsolidationStore;
   readonly modelSettings: ModelSettingsStore;
+  private readonly consolidationAdmin: KnowledgeConsolidationAdmin;
   private readonly backups: BackupStore;
 
   constructor(path: string) {
@@ -43,7 +47,9 @@ export class MemoryDatabase {
     this.queries = new MemoryQueryStore(this.core);
     this.applyStore = new MemoryApplyStore(this.core, this.jobs);
     this.admin = new MemoryAdminStore(this.core);
-    this.sessionRefines = new SessionRefineStore(this.core, this.jobs);
+    this.sessionRefines = new SessionRefineStore(this.core);
+    this.consolidations = new KnowledgeConsolidationStore(this.core);
+    this.consolidationAdmin = new KnowledgeConsolidationAdmin(this.core);
     this.modelSettings = new ModelSettingsStore(this.core);
     this.backups = new BackupStore(this.core, join(dirname(path), "backups"));
   }
@@ -86,25 +92,20 @@ export class MemoryDatabase {
     return this.repositories.getBoundSession(client, nativeSessionRef);
   }
 
-  enqueueStop(
+  captureStop(
     sessionId: string,
+    repoId: string,
     nativeTurnRef: string,
     transcriptPath: string,
-    createJob: boolean,
+    capture: boolean,
   ): EnqueuedJob {
-    return this.jobs.enqueueStop(sessionId, nativeTurnRef, transcriptPath, createJob);
-  }
-
-  claimNextJob(): ClaimedJob | null {
-    return this.jobs.claimNext();
-  }
-
-  recordProjection(turnId: string, digest: string, version: string): void {
-    this.jobs.recordProjection(turnId, digest, version);
-  }
-
-  markJobFailed(jobId: string, errorCode: string): void {
-    this.jobs.fail(jobId, errorCode);
+    return this.jobs.captureStop(
+      sessionId,
+      repoId,
+      nativeTurnRef,
+      transcriptPath,
+      capture,
+    );
   }
 
   searchCards(repoId: string, prompt: string, limit?: number) {
@@ -115,29 +116,11 @@ export class MemoryDatabase {
     return this.queries.recall(repoId, prompt);
   }
 
-  applyExtractResult(
-    jobId: string,
-    repoId: string,
-    result: ExtractResult,
-    sourceSessionId: string,
-    sourceTurnRef: string,
-    revision: number,
-  ): AppliedCandidate {
-    return this.applyStore.apply(
-      jobId,
-      repoId,
-      result,
-      sourceSessionId,
-      sourceTurnRef,
-      revision,
-    );
-  }
-
   applySessionRefinement(
     repoId: string,
     sessionId: string,
     edits: readonly SessionRefinerEdit[],
-    candidates: readonly StagedTurnCandidate[],
+    candidates: readonly CheckpointTurnSource[],
   ): AppliedCandidate[] {
     return this.applyStore.applySessionRefinement(repoId, sessionId, edits, candidates);
   }
@@ -192,8 +175,25 @@ export class MemoryDatabase {
     return this.queries.listPendingReviews();
   }
 
+  listPendingConsolidations(): PendingConsolidationReview[] {
+    return this.consolidationAdmin.listPending();
+  }
+
+  ignoreConsolidation(suggestionId: string): void {
+    this.consolidationAdmin.ignore(suggestionId);
+  }
+
+  applyConsolidationMerge(suggestionId: string): "applied" | "stale" {
+    return this.consolidationAdmin.applyMerge(suggestionId);
+  }
+
   healthSummary(): Record<string, unknown> {
-    return this.queries.health();
+    const consolidation = this.consolidations.health();
+    return {
+      ...this.queries.health(),
+      pending_consolidations: consolidation.pending,
+      failed_consolidations: consolidation.failed,
+    };
   }
 
   sourceStatus(nativeSessionRef: string) {
@@ -204,10 +204,10 @@ export class MemoryDatabase {
 export type {
   AppliedCandidate,
   BoundSession,
-  ClaimedJob,
   EnqueuedJob,
   ListedMemory,
   ListedRepository,
   ListedVersion,
+  PendingConsolidationReview,
   PendingReview,
 } from "./types.js";

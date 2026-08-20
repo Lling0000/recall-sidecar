@@ -35,6 +35,7 @@ export class DatabaseCore {
       }
       this.db.exec("PRAGMA journal_mode=WAL");
       this.db.exec(DATABASE_SCHEMA);
+      this.db.exec("DROP TABLE IF EXISTS turn_candidates");
       this.ensureDefaults();
       chmodSync(path, 0o600);
       this.chmodCompanions();
@@ -119,6 +120,11 @@ export class DatabaseCore {
         "UPDATE repositories SET recall_generation=recall_generation+1 WHERE id=?",
       )
       .run(repoId);
+    this.db
+      .prepare(
+        "UPDATE knowledge_consolidation_suggestions SET state='stale',updated_at=? WHERE repo_id=? AND state='pending'",
+      )
+      .run(now(), repoId);
   }
 
   private ensureDefaults(): void {

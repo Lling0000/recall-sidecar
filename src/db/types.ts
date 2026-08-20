@@ -1,4 +1,8 @@
-import type { StagedTurnCandidate } from "../model/session-types.js";
+import type {
+  ConsolidationMemoryRef,
+  ConsolidationSuggestion,
+} from "../model/consolidation-types.js";
+import type { CheckpointTurnSource } from "../model/session-types.js";
 import type { MemoryCard, RepoIdentity } from "../types.js";
 
 export interface RepositoryRow {
@@ -28,17 +32,6 @@ export interface EnqueuedJob {
   duplicate: boolean;
 }
 
-export interface ClaimedJob {
-  jobId: string;
-  turnId: string;
-  nativeTurnRef: string;
-  repoId: string;
-  sessionId: string;
-  nativeSessionRef: string;
-  transcriptPath: string;
-  attempts: number;
-}
-
 export interface ClaimedSessionRefineJob {
   jobId: string;
   sessionId: string;
@@ -51,12 +44,17 @@ export interface ClaimedSessionRefineJob {
 
 export interface SessionRefineBatch {
   job: ClaimedSessionRefineJob;
-  candidates: StagedTurnCandidate[];
+  turns: Array<
+    CheckpointTurnSource & {
+      internal_turn_id: string;
+      role: "eligible" | "overlap";
+    }
+  >;
 }
 
 export interface AppliedCandidate {
   candidateId: string;
-  state: "applied" | "skipped" | "stale";
+  state: "applied" | "stale";
   memoryId: string | null;
   version: number | null;
 }
@@ -104,4 +102,31 @@ export interface ListedRepository {
   path: string;
   memoryCount: number;
   paused: boolean;
+}
+
+export interface ClaimedConsolidationJob {
+  jobId: string;
+  repoId: string;
+  attempts: number;
+}
+
+export interface ConsolidationReviewCard {
+  memoryId: string;
+  version: number;
+  card: MemoryCard;
+}
+
+export interface PendingConsolidationReview {
+  suggestionId: string;
+  kind: "merge" | "conflict";
+  repoId: string;
+  repoDisplayName: string;
+  target: ConsolidationReviewCard;
+  related: ConsolidationReviewCard[];
+  proposedMemory: MemoryCard | null;
+  reason: string;
+}
+
+export interface StoredConsolidationSuggestion extends ConsolidationSuggestion {
+  related_memories: ConsolidationMemoryRef[];
 }

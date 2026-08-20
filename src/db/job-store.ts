@@ -1,16 +1,17 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseCore } from "./core.js";
 import { now, row } from "./helpers.js";
-import type { ClaimedJob, EnqueuedJob } from "./types.js";
+import type { EnqueuedJob } from "./types.js";
 
 export class JobStore {
   constructor(private readonly core: DatabaseCore) {}
 
-  enqueueStop(
+  captureStop(
     sessionId: string,
+    repoId: string,
     nativeTurnRef: string,
     transcriptPath: string,
-    createJob: boolean,
+    capture: boolean,
   ): EnqueuedJob {
     return this.core.transaction(() => {
       const duplicate = row<{ id: string }>(
@@ -19,7 +20,6 @@ export class JobStore {
           .get(sessionId, nativeTurnRef),
       );
       if (duplicate) return this.existingEnqueue(duplicate.id);
-
       const timestamp = now();
       const turnId = randomUUID();
       this.core.db
@@ -30,94 +30,28 @@ export class JobStore {
           turnId,
           sessionId,
           nativeTurnRef,
-          createJob ? "queued" : "skipped",
+          capture ? "captured" : "skipped",
           timestamp,
         );
       this.core.db
         .prepare("UPDATE sessions SET transcript_path=? WHERE id=?")
         .run(transcriptPath, sessionId);
-      if (!createJob) return { turnId, jobId: null, duplicate: false };
-
+      if (!capture) return { turnId, jobId: null, duplicate: false };
       const jobId = randomUUID();
       this.core.db
         .prepare(
-          "INSERT INTO refine_jobs(id,turn_id,state,created_at,updated_at) VALUES (?,?,'queued',?,?)",
+          `INSERT INTO refine_jobs(id,turn_id,state,created_at,updated_at)
+           VALUES (?,?,'captured',?,?)`,
         )
         .run(jobId, turnId, timestamp, timestamp);
+      this.core.db
+        .prepare(
+          `INSERT INTO session_turn_queue(
+            turn_id,session_id,repo_id,refine_job_id,state,captured_at
+          ) VALUES (?,?,?,?, 'pending',?)`,
+        )
+        .run(turnId, sessionId, repoId, jobId, timestamp);
       return { turnId, jobId, duplicate: false };
-    });
-  }
-
-  claimNext(leaseMilliseconds = 60_000): ClaimedJob | null {
-    return this.core.transaction(() => {
-      const candidate = row<{ id: string }>(
-        this.core.db
-          .prepare(
-            `SELECT j.id FROM refine_jobs j
-             JOIN turns t ON t.id=j.turn_id
-             JOIN sessions s ON s.id=t.session_id
-             WHERE j.state='queued' AND NOT EXISTS (
-               SELECT 1 FROM refine_jobs running
-               JOIN turns rt ON rt.id=running.turn_id
-               JOIN sessions rs ON rs.id=rt.session_id
-               WHERE running.state='running' AND rs.repo_id=s.repo_id
-             ) ORDER BY j.created_at LIMIT 1`,
-          )
-          .get(),
-      );
-      if (!candidate) return null;
-      this.core.db
-        .prepare(
-          `UPDATE refine_jobs SET state='running',attempts=attempts+1,
-             lease_expires_at=?,updated_at=? WHERE id=? AND state='queued'`,
-        )
-        .run(
-          new Date(Date.now() + leaseMilliseconds).toISOString(),
-          now(),
-          candidate.id,
-        );
-      return row<ClaimedJob>(
-        this.core.db
-          .prepare(
-            `SELECT j.id AS jobId,t.id AS turnId,t.native_turn_ref AS nativeTurnRef,
-              s.repo_id AS repoId,s.id AS sessionId,
-              s.native_session_ref AS nativeSessionRef,
-              s.transcript_path AS transcriptPath,j.attempts AS attempts
-             FROM refine_jobs j JOIN turns t ON t.id=j.turn_id
-             JOIN sessions s ON s.id=t.session_id
-             WHERE j.id=? AND s.transcript_path IS NOT NULL`,
-          )
-          .get(candidate.id),
-      );
-    });
-  }
-
-  recordProjection(
-    turnId: string,
-    sourceDigest: string,
-    projectionVersion: string,
-  ): void {
-    this.core.transaction(() => {
-      this.core.db
-        .prepare(
-          "UPDATE turns SET source_digest=?,projection_version=?,state='projected' WHERE id=?",
-        )
-        .run(sourceDigest, projectionVersion, turnId);
-    });
-  }
-
-  fail(jobId: string, errorCode: string): void {
-    this.core.transaction(() => {
-      this.core.db
-        .prepare(
-          "UPDATE refine_jobs SET state='failed',last_error=?,lease_expires_at=NULL,updated_at=? WHERE id=?",
-        )
-        .run(errorCode, now(), jobId);
-      this.core.db
-        .prepare(
-          "UPDATE turns SET state='failed' WHERE id=(SELECT turn_id FROM refine_jobs WHERE id=?)",
-        )
-        .run(jobId);
     });
   }
 

@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { SUPPORTED_CODEX_CLI_VERSIONS } from "../constants.js";
+import { TESTED_CODEX_CLI_VERSIONS } from "../constants.js";
 import type { MemoryDatabase } from "../db/database.js";
 import type { ModelManager } from "../model/manager.js";
 import { readJsonBody, requiredString, sendJson } from "./http-utils.js";
@@ -79,7 +79,10 @@ export class DashboardApi {
       return true;
     }
     if (url.pathname === "/api/reviews") {
-      sendJson(response, 200, { reviews: this.database.listPendingReviews() });
+      sendJson(response, 200, {
+        reviews: this.database.listPendingReviews(),
+        consolidations: this.database.listPendingConsolidations(),
+      });
       return true;
     }
     if (url.pathname === "/api/repositories") {
@@ -129,7 +132,8 @@ export class DashboardApi {
       sendJson(response, 200, {
         sidecar: "ok",
         hooks: ["SessionStart", "UserPromptSubmit", "Stop"],
-        cli_fixture_whitelist: SUPPORTED_CODEX_CLI_VERSIONS,
+        tested_cli_versions: TESTED_CODEX_CLI_VERSIONS,
+        rollout_compatibility: "structural",
         ...this.database.healthSummary(),
       });
       return true;
@@ -146,6 +150,21 @@ export class DashboardApi {
     if (request.method === "POST" && review?.[1]) {
       this.database.confirmCandidate(decodeURIComponent(review[1]));
       sendJson(response, 200, { ok: true });
+      return true;
+    }
+    const consolidation = url.pathname.match(
+      /^\/api\/consolidations\/([^/]+)\/(apply|ignore)$/u,
+    );
+    if (request.method === "POST" && consolidation?.[1] && consolidation[2]) {
+      await readJsonBody(request);
+      const suggestionId = decodeURIComponent(consolidation[1]);
+      if (consolidation[2] === "ignore") {
+        this.database.ignoreConsolidation(suggestionId);
+        sendJson(response, 200, { ok: true });
+      } else {
+        const state = this.database.applyConsolidationMerge(suggestionId);
+        sendJson(response, 200, { ok: state === "applied", state });
+      }
       return true;
     }
     const repositoryAction = url.pathname.match(
@@ -202,15 +221,10 @@ export class DashboardApi {
           ? null
           : requiredString(body.api_key, "api_key", 20_000);
       const model = requiredString(body.model, "model", 200);
-      const refinerModel =
-        body.refiner_model === undefined
-          ? model
-          : requiredString(body.refiner_model, "refiner_model", 200);
       await this.models.configure(
         requiredString(body.base_url, "base_url", 2_000),
         model,
         apiKey,
-        refinerModel,
       );
       sendJson(response, 200, { ok: true });
       return true;

@@ -6,11 +6,13 @@ import test from "node:test";
 import { MemoryDatabase } from "../../src/db/database.js";
 import { resolveRepoIdentity } from "../../src/repo/identity.js";
 import type { MemoryCard } from "../../src/types.js";
+import { applyCreate, captureTurn } from "../helpers/apply-memory.js";
 
 const CARD: MemoryCard = {
+  kind: "lesson",
   title: "提交检查",
-  wrong_behavior: "跳过 lint",
-  correct_behavior: "提交前运行 make lint。",
+  knowledge: "提交前运行 make lint。",
+  rationale: "该仓库的提交检查依赖 lint 结果。",
   applicability: "本地提交与 PR",
 };
 
@@ -63,21 +65,7 @@ test("P0-21 source command degrades safely after Codex transcript deletion", asy
       "source-session",
       await resolveRepoIdentity(project),
     );
-    const queued = database.enqueueStop(session.id, "source-turn", transcript, true);
-    assert.ok(queued.jobId);
-    database.applyExtractResult(
-      queued.jobId,
-      session.repoId,
-      {
-        action: "create",
-        target_memory_id: null,
-        base_version: null,
-        memory: CARD,
-      },
-      session.id,
-      "source-turn",
-      1,
-    );
+    applyCreate(database, session, "source-turn", CARD, transcript);
     assert.deepEqual(database.sourceStatus("source-session"), {
       command: "codex resume source-session",
       available: true,
@@ -104,26 +92,22 @@ test("P0-24 recall is empty before Apply and active immediately after commit", a
       "visibility-session",
       await resolveRepoIdentity(project),
     );
-    const queued = database.enqueueStop(
-      session.id,
-      "visibility-turn",
-      "/tmp/visibility.jsonl",
-      true,
-    );
+    const queued = captureTurn(database, session, "visibility-turn");
     assert.ok(queued.jobId);
     assert.equal(database.recall(session.repoId, "提交 lint"), "");
-    database.applyExtractResult(
-      queued.jobId,
+    database.applySessionRefinement(
       session.repoId,
-      {
-        action: "create",
-        target_memory_id: null,
-        base_version: null,
-        memory: CARD,
-      },
       session.id,
-      "visibility-turn",
-      1,
+      [
+        {
+          action: "create",
+          source_turn_id: "visibility-turn",
+          target_memory_id: null,
+          base_version: null,
+          memory: CARD,
+        },
+      ],
+      [{ job_id: queued.jobId, turn_id: "visibility-turn" }],
     );
     assert.match(database.recall(session.repoId, "提交 lint"), /make lint/u);
   } finally {

@@ -59,8 +59,9 @@ test("Unix socket binds sessions and enqueues one idempotent Stop", async () => 
     const duplicate = await callSidecar(socket, stopRequest, 1_000);
     assert.deepEqual(first, { ok: true, enqueued: true });
     assert.deepEqual(duplicate, { ok: true, enqueued: true });
-    assert.equal(database.claimNextJob()?.nativeTurnRef, "turn-1");
-    assert.equal(database.claimNextJob(), null);
+    const bound = database.getBoundSession("codex", "session-1");
+    assert.ok(bound);
+    assert.equal(database.sessionRefines.pendingCount(bound.id), 1);
   } finally {
     await server.stop();
     database.close();

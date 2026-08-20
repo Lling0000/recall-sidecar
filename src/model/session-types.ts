@@ -1,4 +1,4 @@
-import type { CompareCard, ExtractAction, MemoryCard } from "../types.js";
+import type { CompareCard, MemoryCard } from "../types.js";
 
 export interface SessionTurnContext {
   turn_id: string;
@@ -6,24 +6,20 @@ export interface SessionTurnContext {
   final_answer: string;
 }
 
-export interface StagedTurnCandidate {
+export interface CheckpointTurnSource {
   job_id: string;
   turn_id: string;
-  action: ExtractAction;
-  target_memory_id: string | null;
-  base_version: number | null;
-  memory: MemoryCard | null;
 }
 
 export interface SessionGateInput {
   turns: SessionTurnContext[];
-  candidates: StagedTurnCandidate[];
+  eligible_turn_ids: string[];
   active_memories: CompareCard[];
 }
 
 export interface SessionGateResult {
   should_refine: boolean;
-  candidate_turn_ids: string[];
+  selected_turn_ids: string[];
 }
 
 export interface SessionRefinerInput extends SessionGateInput {

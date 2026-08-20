@@ -40,7 +40,7 @@ export class MemoryQueryStore {
     const lines = [RECALL_NOTICE];
     for (const card of cards) {
       const applicability = card.applicability ? `（${card.applicability}）` : "";
-      const next = `${card.title}：${card.correct_behavior}${applicability}`;
+      const next = `[${card.kind}] ${card.title}：${card.knowledge}${applicability}`;
       if ([...lines, next].join("\n").length > RECALL_MAX_CHARS) break;
       lines.push(next);
     }
@@ -109,7 +109,7 @@ export class MemoryQueryStore {
          WHERE c.state='applied'
            AND (c.review_state='unverified'
              OR (c.action='create' AND c.review_state='none'))
-           AND (c.action!='create' OR m.active_version_id=newer.id)
+           AND m.state='active' AND m.active_version_id=newer.id
          ORDER BY c.created_at DESC`,
       )
       .all() as unknown as ReviewRow[];
@@ -142,11 +142,8 @@ export class MemoryQueryStore {
       stale_candidates: count(
         "SELECT count(*) AS count FROM candidates WHERE state='stale'",
       ),
-      rejected_candidates: count(
-        "SELECT count(*) AS count FROM candidates WHERE action='reject'",
-      ),
-      staged_turn_candidates: count(
-        "SELECT count(*) AS count FROM turn_candidates WHERE state='staged'",
+      pending_checkpoint_turns: count(
+        "SELECT count(*) AS count FROM session_turn_queue WHERE state='pending'",
       ),
       failed_session_refines: count(
         "SELECT count(*) AS count FROM session_refine_jobs WHERE state='failed'",

@@ -8,13 +8,7 @@ export class ModelSettingsStore {
   getConfiguration(): ModelConfiguration | null {
     const value = this.core.getSetting("model_configuration");
     if (!value) return null;
-    const parsed = JSON.parse(value) as ModelConfiguration & {
-      refiner_model?: string;
-    };
-    return {
-      ...parsed,
-      refiner_model: parsed.refiner_model || parsed.model,
-    };
+    return JSON.parse(value) as ModelConfiguration;
   }
 
   saveConfiguration(configuration: ModelConfiguration): void {
@@ -27,32 +21,31 @@ export class ModelSettingsStore {
       this.put("consent_origin", "");
       this.put("verified_model_origin", "");
       this.put("verified_model_name", "");
-      this.put("verified_refiner_model_name", "");
       this.core.db
         .prepare(
-          "DELETE FROM settings WHERE key IN ('model_usage_date','model_usage_count')",
+          `DELETE FROM settings WHERE key IN (
+            'model_usage_date','model_usage_count','verified_refiner_model_name'
+          )`,
         )
         .run();
     });
   }
 
-  markStrictSchemaVerified(origin: string, model: string, refinerModel = model): void {
+  markStrictSchemaVerified(origin: string, model: string): void {
     this.core.transaction(() => {
       this.put("strict_schema_verified", "true");
       this.put("verified_model_origin", origin);
       this.put("verified_model_name", model);
-      this.put("verified_refiner_model_name", refinerModel);
       this.put("schema_verified_at", now());
     });
   }
 
-  enableExtraction(origin: string, model: string, refinerModel = model): void {
+  enableExtraction(origin: string, model: string): void {
     this.core.transaction(() => {
       if (
         this.value("strict_schema_verified") !== "true" ||
         this.value("verified_model_origin") !== origin ||
         this.value("verified_model_name") !== model ||
-        this.value("verified_refiner_model_name") !== refinerModel ||
         this.value("consent_origin") !== origin ||
         this.value("prompt_consent") !== "true" ||
         this.value("final_answer_consent") !== "true"

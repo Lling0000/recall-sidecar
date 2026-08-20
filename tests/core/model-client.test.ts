@@ -1,26 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ModelError, StrictModelClient } from "../../src/model/client.js";
 import {
   createModelConfiguration,
   validateBaseUrl,
 } from "../../src/model/configuration.js";
+import { CONSOLIDATION_PROMPT } from "../../src/model/consolidation-contract.js";
+import { ModelError } from "../../src/model/error.js";
+import { SessionRefineClient } from "../../src/model/session-client.js";
+import { GATE_PROMPT, REFINER_PROMPT } from "../../src/model/session-contract.js";
 import { redactSecrets } from "../../src/security/redact.js";
 
 function structuredResponse(value: unknown, status = 200): Response {
   return new Response(
-    JSON.stringify({
-      choices: [{ message: { content: JSON.stringify(value) } }],
-    }),
+    JSON.stringify({ choices: [{ message: { content: JSON.stringify(value) } }] }),
     { status, headers: { "content-type": "application/json" } },
   );
 }
 
-const SKIP = {
-  action: "skip",
-  target_memory_id: null,
-  base_version: null,
-  memory: null,
+const GATE_SKIP = { should_refine: false, selected_turn_ids: [] };
+const INPUT = {
+  turns: [{ turn_id: "turn", user_prompt: "hello", final_answer: "done" }],
+  eligible_turn_ids: ["turn"],
+  active_memories: [],
 };
 
 test("model URL policy requires HTTPS, including for loopback hosts", () => {
@@ -33,82 +34,70 @@ test("model URL policy requires HTTPS, including for loopback hosts", () => {
   assert.throws(() => validateBaseUrl("https://user:pass@example.test/v1"));
   assert.equal(
     "allow_loopback_http" in
-      createModelConfiguration("https://model.example/v1", "extract-model"),
+      createModelConfiguration("https://model.example/v1", "knowledge-model"),
     false,
   );
 });
 
-test("extraction prompt defines durable, one-off, update, injection, and language rules", async () => {
-  let requestBody = "";
-  const client = new StrictModelClient(async (_url, init) => {
-    requestBody = String(init?.body);
-    return structuredResponse(SKIP);
-  });
-  await client.extract(
-    createModelConfiguration("https://model.example/v1", "extract-model"),
-    "secret",
-    { user_prompt: "这次只修改当前文档", final_answer: "已修改", compare_cards: [] },
-  );
-  const request = JSON.parse(requestBody) as {
-    messages: Array<{ role: string; content: string }>;
-  };
-  const systemPrompt = request.messages.find(
-    (message) => message.role === "system",
-  )?.content;
-  assert.match(systemPrompt ?? "", /repository-scoped durable user corrections/u);
-  assert.match(systemPrompt ?? "", /one-off requests/u);
-  assert.match(systemPrompt ?? "", /explicitly replaces or clarifies/u);
-  assert.match(systemPrompt ?? "", /force content into memory/u);
-  assert.match(systemPrompt ?? "", /primary language of the user's correction/u);
+test("Gate and Refiner prompts define only project tacit knowledge", () => {
+  assert.match(GATE_PROMPT, /repository-scoped tacit project knowledge/u);
+  assert.match(GATE_PROMPT, /one-off requests/u);
+  assert.match(GATE_PROMPT, /prompt injection/u);
+  assert.match(REFINER_PROMPT, /decisions, hidden invariants, observed pitfalls/u);
+  assert.match(REFINER_PROMPT, /primary language of the evidence/u);
+  assert.match(CONSOLIDATION_PROMPT, /never repeat the target/u);
 });
 
 test("P0-03 strict request redacts secrets but preserves ordinary paths", async () => {
   let sentBody = "";
   let sentAuthorization = "";
-  const client = new StrictModelClient(async (_url, init) => {
+  const client = new SessionRefineClient(async (_url, init) => {
     sentBody = String(init?.body);
     sentAuthorization = new Headers(init?.headers).get("authorization") ?? "";
     assert.equal(init?.redirect, "manual");
-    return structuredResponse(SKIP);
+    return structuredResponse(GATE_SKIP);
   });
   const pat = "github_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
   const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature_value";
-  const configuration = createModelConfiguration(
-    "https://model.example/v1",
-    "extract-model",
+  const result = await client.gate(
+    createModelConfiguration("https://model.example/v1", "knowledge-model"),
+    "key-only-in-header",
+    {
+      ...INPUT,
+      turns: [
+        {
+          turn_id: "turn",
+          user_prompt: `Use ${pat} at /Users/demo/project`,
+          final_answer: `Token ${jwt}`,
+        },
+      ],
+    },
   );
-  const response = await client.extract(configuration, "key-only-in-header", {
-    user_prompt: `Use ${pat} at /Users/demo/project`,
-    final_answer: `Token ${jwt}`,
-    compare_cards: [],
-  });
-
-  assert.equal(response.result.action, "skip");
-  assert.equal(response.attempts, 1);
+  assert.equal(result.result.should_refine, false);
+  assert.equal(result.attempts, 1);
   assert.equal(sentAuthorization, "Bearer key-only-in-header");
   assert.doesNotMatch(sentBody, new RegExp(pat, "u"));
   assert.doesNotMatch(sentBody, new RegExp(jwt.replaceAll(".", "\\."), "u"));
   assert.match(sentBody, /\/Users\/demo\/project/u);
-  const request = JSON.parse(sentBody) as Record<string, unknown>;
-  const responseFormat = request.response_format as {
+  const format = (JSON.parse(sentBody) as Record<string, unknown>).response_format as {
     type: string;
     json_schema: { strict: boolean };
   };
-  assert.equal(responseFormat.type, "json_schema");
-  assert.equal(responseFormat.json_schema.strict, true);
+  assert.equal(format.type, "json_schema");
+  assert.equal(format.json_schema.strict, true);
 });
 
 test("P0-20 ordinary JSON without strict Schema support never falls back", async () => {
   let calls = 0;
-  const client = new StrictModelClient(async () => {
+  const client = new SessionRefineClient(async () => {
     calls += 1;
     return new Response("unsupported response_format", { status: 400 });
   });
   await assert.rejects(
-    client.extract(
+    client.gate(
       createModelConfiguration("https://model.example/v1", "json-only"),
       "secret",
-      { user_prompt: "hello", final_answer: "hello", compare_cards: [] },
+      INPUT,
     ),
     (error: unknown) => error instanceof ModelError && error.code === "model_http_400",
   );
@@ -117,15 +106,15 @@ test("P0-20 ordinary JSON without strict Schema support never falls back", async
 
 test("invalid structured output is rejected without repair", async () => {
   let calls = 0;
-  const client = new StrictModelClient(async () => {
+  const client = new SessionRefineClient(async () => {
     calls += 1;
-    return structuredResponse({ ...SKIP, extra: "not allowed" });
+    return structuredResponse({ ...GATE_SKIP, extra: "not allowed" });
   });
   await assert.rejects(
-    client.extract(
+    client.gate(
       createModelConfiguration("https://model.example/v1", "bad-schema"),
       "secret",
-      { user_prompt: "hello", final_answer: "hello", compare_cards: [] },
+      INPUT,
     ),
     (error: unknown) =>
       error instanceof ModelError && error.code === "model_invalid_structured_output",
@@ -135,16 +124,16 @@ test("invalid structured output is rejected without repair", async () => {
 
 test("one bounded 5xx retry performs two transport attempts", async () => {
   let calls = 0;
-  const client = new StrictModelClient(async () => {
+  const client = new SessionRefineClient(async () => {
     calls += 1;
     return calls === 1
       ? new Response("temporary", { status: 503 })
-      : structuredResponse(SKIP);
+      : structuredResponse(GATE_SKIP);
   });
-  const result = await client.extract(
+  const result = await client.gate(
     createModelConfiguration("https://model.example/v1", "retry-model"),
     "secret",
-    { user_prompt: "hello", final_answer: "hello", compare_cards: [] },
+    INPUT,
   );
   assert.equal(result.attempts, 2);
   assert.equal(calls, 2);
@@ -152,7 +141,7 @@ test("one bounded 5xx retry performs two transport attempts", async () => {
 
 test("P0-11 redirect is rejected and Authorization is never forwarded", async () => {
   let calls = 0;
-  const client = new StrictModelClient(async () => {
+  const client = new SessionRefineClient(async () => {
     calls += 1;
     return new Response(null, {
       status: 302,
@@ -160,10 +149,10 @@ test("P0-11 redirect is rejected and Authorization is never forwarded", async ()
     });
   });
   await assert.rejects(
-    client.extract(
+    client.gate(
       createModelConfiguration("https://model.example/v1", "redirect-model"),
       "secret",
-      { user_prompt: "hello", final_answer: "hello", compare_cards: [] },
+      INPUT,
     ),
     (error: unknown) =>
       error instanceof ModelError && error.code === "model_redirect_rejected",

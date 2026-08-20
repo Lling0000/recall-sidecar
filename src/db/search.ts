@@ -34,9 +34,10 @@ export function safeFtsQuery(input: string): string | null {
 
 export function searchableCardText(card: MemoryCard): string {
   const text = [
+    card.kind,
     card.title,
-    card.wrong_behavior,
-    card.correct_behavior,
+    card.knowledge,
+    card.rationale,
     card.applicability,
   ].join(" ");
   return `${text} ${searchTokens(text).join(" ")}`;

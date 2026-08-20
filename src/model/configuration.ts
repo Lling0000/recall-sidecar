@@ -4,22 +4,16 @@ import type { ModelConfiguration } from "./types.js";
 export function createModelConfiguration(
   baseUrl: string,
   model: string,
-  refinerModel = model,
 ): ModelConfiguration {
   const normalizedModel = model.trim();
-  const normalizedRefinerModel = refinerModel.trim();
   if (!normalizedModel || normalizedModel.length > 200) {
     throw new Error("invalid_model_name");
-  }
-  if (!normalizedRefinerModel || normalizedRefinerModel.length > 200) {
-    throw new Error("invalid_refiner_model_name");
   }
   const url = validateBaseUrl(baseUrl);
   return {
     provider: "openai-compatible",
     base_url: url.href.replace(/\/$/u, ""),
     model: normalizedModel,
-    refiner_model: normalizedRefinerModel,
     api_key_ref: KEYCHAIN_REFERENCE,
     timeout_ms: 30_000,
     max_input_chars: 12_000,

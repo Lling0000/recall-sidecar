@@ -77,14 +77,22 @@ export class SidecarService {
         request.session_id,
         this.allowedTranscriptRoots,
       );
-      const queued = this.database.enqueueStop(
+      const queued = this.database.captureStop(
         session.id,
+        session.repoId,
         request.turn_id,
         transcriptPath,
         this.database.extractionEnabled() &&
           !this.database.repositoryPaused(session.repoId),
       );
-      if (queued.jobId) this.onJobEnqueued();
+      const checkpoint = queued.jobId
+        ? this.database.sessionRefines.enqueue(
+            session.id,
+            session.repoId,
+            "turn_interval",
+          )
+        : null;
+      if (checkpoint) this.onJobEnqueued();
       return { ok: true, enqueued: queued.jobId !== null };
     } catch (error) {
       return {

@@ -6,10 +6,11 @@ import {
   KEYCHAIN_SERVICE,
   LAUNCHD_LABEL,
   PLUGIN_DIRECTORY_NAME,
-  SUPPORTED_CODEX_CLI_VERSIONS,
   SUPPORTED_NODE_RANGE,
+  TESTED_CODEX_CLI_VERSIONS,
 } from "../src/constants.js";
-import { EXTRACT_RESPONSE_SCHEMA } from "../src/security/memory-card.js";
+import { CONSOLIDATION_SCHEMA } from "../src/model/consolidation-contract.js";
+import { GATE_SCHEMA, REFINER_SCHEMA } from "../src/model/session-contract.js";
 
 const root = new URL("../", import.meta.url).pathname;
 const [spec, agents, packageText, hooksText, pluginText] = await Promise.all([
@@ -39,7 +40,7 @@ if (!hooksText.includes("$PLUGIN_ROOT"))
   failures.push("Hook commands must use $PLUGIN_ROOT");
 
 for (const value of [
-  SUPPORTED_CODEX_CLI_VERSIONS[0],
+  TESTED_CODEX_CLI_VERSIONS[0],
   KEYCHAIN_SERVICE,
   KEYCHAIN_ACCOUNT,
   KEYCHAIN_REFERENCE,
@@ -51,10 +52,21 @@ for (const value of [
   }
 }
 
-const actions = EXTRACT_RESPONSE_SCHEMA.properties.action.enum.join(",");
-if (actions !== "skip,reject,create,update,need_prev_turn") {
-  failures.push("Strict extraction action enum changed");
-}
+assertEqual(
+  GATE_SCHEMA.properties.selected_turn_ids.maxItems.toString(),
+  "8",
+  "Gate selection limit",
+);
+assertEqual(
+  REFINER_SCHEMA.properties.edits.maxItems.toString(),
+  "8",
+  "Refiner edit limit",
+);
+assertEqual(
+  CONSOLIDATION_SCHEMA.properties.suggestions.maxItems.toString(),
+  "8",
+  "Consolidation suggestion limit",
+);
 
 const testDirectory = join(root, "tests", "core");
 const testText = (
@@ -66,7 +78,7 @@ const testText = (
       .map((name) => readFile(join(testDirectory, name), "utf8")),
   )
 ).join("\n");
-for (let number = 1; number <= 24; number += 1) {
+for (let number = 1; number <= 25; number += 1) {
   const id = `P0-${String(number).padStart(2, "0")}`;
   if (!testText.includes(id)) failures.push(`${id} has no explicit core test mapping`);
 }

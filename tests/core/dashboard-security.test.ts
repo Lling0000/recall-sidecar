@@ -113,7 +113,13 @@ test("P0-04 dashboard bootstrap is one-time and writes require Origin plus CSRF"
 test("dashboard exposes exactly four product pages without unsafe DOM APIs", async () => {
   const root = new URL("../../assets/dashboard/", import.meta.url);
   const page = await readFile(new URL("index.html", root), "utf8");
-  const script = await readFile(new URL("app.js", root), "utf8");
+  const script = (
+    await Promise.all(
+      ["app.js", "reviews.js", "bootstrap.js"].map((name) =>
+        readFile(new URL(name, root), "utf8"),
+      ),
+    )
+  ).join("\n");
   for (const name of ["reviews", "memories", "model", "health"]) {
     assert.match(page, new RegExp(`data-page="${name}"`, "u"));
   }
@@ -125,6 +131,7 @@ test("dashboard exposes exactly four product pages without unsafe DOM APIs", asy
   assert.doesNotMatch(script, /外发本轮 Prompt|外发最终回答/u);
   assert.match(script, /保存并测试/u);
   assert.match(script, /关闭自动抽取/u);
+  assert.match(script, /冲突不会自动选择胜者/u);
   assert.match(script, /element\("strong", repository\.displayName\)/u);
   assert.doesNotMatch(page, /data-page="(?:home|settings|export)"/u);
 });

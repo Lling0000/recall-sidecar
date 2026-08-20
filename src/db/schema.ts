@@ -59,24 +59,9 @@ CREATE TABLE IF NOT EXISTS candidates (
   base_version INTEGER,
   revision INTEGER NOT NULL,
   content TEXT,
-  state TEXT NOT NULL CHECK (state IN ('applied', 'skipped', 'failed', 'stale')),
+  state TEXT NOT NULL CHECK (state IN ('applied', 'stale')),
   review_state TEXT NOT NULL CHECK (review_state IN ('none', 'unverified', 'confirmed', 'rolled_back')),
   created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS turn_candidates (
-  refine_job_id TEXT PRIMARY KEY REFERENCES refine_jobs(id) ON DELETE CASCADE,
-  repo_id TEXT NOT NULL REFERENCES repositories(id),
-  session_id TEXT NOT NULL REFERENCES sessions(id),
-  native_turn_ref TEXT NOT NULL,
-  action TEXT NOT NULL,
-  target_id TEXT,
-  base_version INTEGER,
-  revision INTEGER NOT NULL,
-  content TEXT,
-  state TEXT NOT NULL CHECK (state IN ('staged', 'consumed', 'dismissed')),
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS session_refine_jobs (
@@ -89,6 +74,24 @@ CREATE TABLE IF NOT EXISTS session_refine_jobs (
   last_error TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS session_turn_queue (
+  turn_id TEXT PRIMARY KEY REFERENCES turns(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL REFERENCES sessions(id),
+  repo_id TEXT NOT NULL REFERENCES repositories(id),
+  refine_job_id TEXT NOT NULL UNIQUE REFERENCES refine_jobs(id) ON DELETE CASCADE,
+  state TEXT NOT NULL CHECK (state IN ('pending', 'processed')),
+  captured_at TEXT NOT NULL,
+  processed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS session_refine_job_turns (
+  session_refine_job_id TEXT NOT NULL REFERENCES session_refine_jobs(id) ON DELETE CASCADE,
+  turn_id TEXT NOT NULL REFERENCES turns(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('eligible', 'overlap')),
+  ordinal INTEGER NOT NULL,
+  PRIMARY KEY(session_refine_job_id, turn_id)
 );
 
 CREATE TABLE IF NOT EXISTS memories (
@@ -114,6 +117,35 @@ CREATE TABLE IF NOT EXISTS memory_versions (
   restores_version_id TEXT REFERENCES memory_versions(id),
   created_at TEXT NOT NULL,
   UNIQUE(memory_id, version_no)
+);
+
+CREATE TABLE IF NOT EXISTS knowledge_consolidation_jobs (
+  id TEXT PRIMARY KEY,
+  repo_id TEXT NOT NULL REFERENCES repositories(id),
+  state TEXT NOT NULL CHECK (state IN ('queued', 'running', 'completed', 'failed')),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS consolidation_active_repo
+ON knowledge_consolidation_jobs(repo_id) WHERE state IN ('queued', 'running');
+
+CREATE TABLE IF NOT EXISTS knowledge_consolidation_suggestions (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL REFERENCES knowledge_consolidation_jobs(id) ON DELETE CASCADE,
+  repo_id TEXT NOT NULL REFERENCES repositories(id),
+  kind TEXT NOT NULL CHECK (kind IN ('merge', 'conflict')),
+  target_memory_id TEXT NOT NULL,
+  target_base_version INTEGER NOT NULL,
+  related_json TEXT NOT NULL,
+  proposed_content TEXT,
+  reason TEXT NOT NULL,
+  fingerprint TEXT NOT NULL UNIQUE,
+  state TEXT NOT NULL CHECK (state IN ('pending', 'applied', 'ignored', 'stale')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(

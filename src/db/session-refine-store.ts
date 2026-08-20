@@ -1,77 +1,36 @@
 import { randomUUID } from "node:crypto";
-import type { StagedTurnCandidate } from "../model/session-types.js";
-import type { ExtractResult } from "../types.js";
 import type { DatabaseCore } from "./core.js";
-import { now, parseCard, row } from "./helpers.js";
-import type { JobStore } from "./job-store.js";
+import { now, row } from "./helpers.js";
 import type { ClaimedSessionRefineJob, SessionRefineBatch } from "./types.js";
 
 const DEFAULT_BATCH_SIZE = 25;
+const DEFAULT_OVERLAP_SIZE = 5;
 
 export class SessionRefineStore {
-  constructor(
-    private readonly core: DatabaseCore,
-    private readonly jobs: JobStore,
-  ) {}
-
-  stage(
-    refineJobId: string,
-    repoId: string,
-    sessionId: string,
-    nativeTurnRef: string,
-    result: ExtractResult,
-    revision: number,
-  ): void {
-    this.core.transaction(() => {
-      const timestamp = now();
-      this.core.db
-        .prepare(
-          `INSERT OR IGNORE INTO turn_candidates(
-            refine_job_id,repo_id,session_id,native_turn_ref,action,target_id,
-            base_version,revision,content,state,created_at,updated_at
-          ) VALUES (?,?,?,?,?,?,?,?,?,'staged',?,?)`,
-        )
-        .run(
-          refineJobId,
-          repoId,
-          sessionId,
-          nativeTurnRef,
-          result.action,
-          result.target_memory_id,
-          result.base_version,
-          revision,
-          result.memory ? JSON.stringify(result.memory) : null,
-          timestamp,
-          timestamp,
-        );
-      this.jobs.complete(refineJobId);
-      this.core.audit("turn_candidate_staged", refineJobId, {
-        repo_id: repoId,
-        action: result.action,
-      });
-    });
-  }
+  constructor(private readonly core: DatabaseCore) {}
 
   enqueue(
     sessionId: string,
     repoId: string,
     reason: "turn_interval" | "compact",
     threshold = DEFAULT_BATCH_SIZE,
+    overlapSize = DEFAULT_OVERLAP_SIZE,
   ): string | null {
     return this.core.transaction(() => {
-      const staged = this.stagedCount(sessionId);
-      if (staged === 0 || (reason === "turn_interval" && staged < threshold)) {
+      const existing = this.activeJob(sessionId);
+      if (existing) return existing;
+      const eligible = this.pendingTurns(sessionId, threshold);
+      if (
+        eligible.length === 0 ||
+        (reason === "turn_interval" && eligible.length < threshold)
+      ) {
         return null;
       }
-      const existing = row<{ id: string }>(
-        this.core.db
-          .prepare(
-            `SELECT id FROM session_refine_jobs
-             WHERE session_id=? AND state IN ('queued','running') LIMIT 1`,
-          )
-          .get(sessionId),
+      const overlap = this.overlapTurns(
+        sessionId,
+        eligible[0]?.queue_rowid,
+        overlapSize,
       );
-      if (existing) return existing.id;
       const id = randomUUID();
       const timestamp = now();
       this.core.db
@@ -81,10 +40,19 @@ export class SessionRefineStore {
           ) VALUES (?,?,?,?,'queued',?,?)`,
         )
         .run(id, sessionId, repoId, reason, timestamp, timestamp);
+      const insert = this.core.db.prepare(
+        `INSERT INTO session_refine_job_turns(
+          session_refine_job_id,turn_id,role,ordinal
+        ) VALUES (?,?,?,?)`,
+      );
+      let ordinal = 0;
+      for (const turn of overlap) insert.run(id, turn.turn_id, "overlap", ordinal++);
+      for (const turn of eligible) insert.run(id, turn.turn_id, "eligible", ordinal++);
       this.core.audit("session_refine_enqueued", id, {
         repo_id: repoId,
         reason,
-        staged,
+        eligible: eligible.length,
+        overlap: overlap.length,
       });
       return id;
     });
@@ -124,30 +92,34 @@ export class SessionRefineStore {
     });
   }
 
-  batch(job: ClaimedSessionRefineJob, limit = DEFAULT_BATCH_SIZE): SessionRefineBatch {
-    const rows = this.core.db
+  batch(job: ClaimedSessionRefineJob): SessionRefineBatch {
+    const turns = this.core.db
       .prepare(
-        `SELECT refine_job_id,native_turn_ref,action,target_id,base_version,content
-         FROM turn_candidates WHERE session_id=? AND state='staged'
-         ORDER BY created_at LIMIT ?`,
+        `SELECT jt.turn_id AS internal_turn_id,t.native_turn_ref AS turn_id,
+          q.refine_job_id AS job_id,jt.role
+         FROM session_refine_job_turns jt
+         JOIN turns t ON t.id=jt.turn_id
+         JOIN session_turn_queue q ON q.turn_id=jt.turn_id
+         WHERE jt.session_refine_job_id=? ORDER BY jt.ordinal`,
       )
-      .all(job.sessionId, limit) as unknown as StagedCandidateRow[];
-    return { job, candidates: rows.map(toCandidate) };
+      .all(job.jobId) as unknown as SessionRefineBatch["turns"];
+    return { job, turns };
   }
 
-  finish(
-    jobId: string,
-    batchJobIds: readonly string[],
-    consumedJobIds: ReadonlySet<string>,
-    refined: boolean,
-  ): void {
+  finish(jobId: string, processedTurnIds: ReadonlySet<string>, refined: boolean): void {
     this.core.transaction(() => {
       const timestamp = now();
-      const statement = this.core.db.prepare(
-        "UPDATE turn_candidates SET state=?,updated_at=? WHERE refine_job_id=? AND state='staged'",
+      const update = this.core.db.prepare(
+        `UPDATE session_turn_queue SET state='processed',processed_at=?
+         WHERE turn_id=? AND state='pending'`,
       );
-      for (const id of batchJobIds) {
-        statement.run(consumedJobIds.has(id) ? "consumed" : "dismissed", timestamp, id);
+      const completeCapture = this.core.db.prepare(
+        `UPDATE refine_jobs SET state='completed',updated_at=?
+         WHERE id=(SELECT refine_job_id FROM session_turn_queue WHERE turn_id=?)`,
+      );
+      for (const turnId of processedTurnIds) {
+        update.run(timestamp, turnId);
+        completeCapture.run(timestamp, turnId);
       }
       this.core.db
         .prepare(
@@ -157,10 +129,7 @@ export class SessionRefineStore {
       this.core.audit(
         refined ? "session_refine_completed" : "session_refine_skipped",
         jobId,
-        {
-          consumed: consumedJobIds.size,
-          batch_size: batchJobIds.length,
-        },
+        { processed: processedTurnIds.size },
       );
     });
   }
@@ -177,35 +146,60 @@ export class SessionRefineStore {
     });
   }
 
-  stagedCount(sessionId: string): number {
+  pendingCount(sessionId: string): number {
     return Number(
       row<{ count: number }>(
         this.core.db
           .prepare(
-            "SELECT count(*) AS count FROM turn_candidates WHERE session_id=? AND state='staged'",
+            "SELECT count(*) AS count FROM session_turn_queue WHERE session_id=? AND state='pending'",
           )
           .get(sessionId),
       )?.count ?? 0,
     );
   }
+
+  private activeJob(sessionId: string): string | null {
+    return (
+      row<{ id: string }>(
+        this.core.db
+          .prepare(
+            `SELECT id FROM session_refine_jobs
+             WHERE session_id=? AND state IN ('queued','running') LIMIT 1`,
+          )
+          .get(sessionId),
+      )?.id ?? null
+    );
+  }
+
+  private pendingTurns(sessionId: string, limit: number): QueuedTurn[] {
+    return this.core.db
+      .prepare(
+        `SELECT turn_id,captured_at,rowid AS queue_rowid FROM session_turn_queue
+         WHERE session_id=? AND state='pending'
+         ORDER BY captured_at,rowid LIMIT ?`,
+      )
+      .all(sessionId, limit) as unknown as QueuedTurn[];
+  }
+
+  private overlapTurns(
+    sessionId: string,
+    beforeRowId: number | undefined,
+    limit: number,
+  ): QueuedTurn[] {
+    if (!beforeRowId || limit <= 0) return [];
+    const rows = this.core.db
+      .prepare(
+        `SELECT turn_id,captured_at,rowid AS queue_rowid FROM session_turn_queue
+         WHERE session_id=? AND state='processed' AND rowid<?
+         ORDER BY rowid DESC LIMIT ?`,
+      )
+      .all(sessionId, beforeRowId, limit) as unknown as QueuedTurn[];
+    return rows.reverse();
+  }
 }
 
-interface StagedCandidateRow {
-  refine_job_id: string;
-  native_turn_ref: string;
-  action: StagedTurnCandidate["action"];
-  target_id: string | null;
-  base_version: number | null;
-  content: string | null;
-}
-
-function toCandidate(value: StagedCandidateRow): StagedTurnCandidate {
-  return {
-    job_id: value.refine_job_id,
-    turn_id: value.native_turn_ref,
-    action: value.action,
-    target_memory_id: value.target_id,
-    base_version: value.base_version,
-    memory: value.content ? parseCard(value.content) : null,
-  };
+interface QueuedTurn {
+  turn_id: string;
+  captured_at: string;
+  queue_rowid: number;
 }

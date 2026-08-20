@@ -72,69 +72,11 @@ async function api(path, options = {}) {
   if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
   return body;
 }
-async function renderReviews() {
-  setPage("reviews", "待核对", "新建和更新的记忆已经生效，请确认是否适合长期保留。");
-  const { reviews } = await api("/api/reviews");
-  if (!reviews.length) return content.append(emptyState("没有需要核对的记忆", "check-circle"));
-  const list = element("div", undefined, "review-list");
-  for (const review of reviews) {
-    const panel = element("article", undefined, "review-panel");
-    const heading = element("div", undefined, "review-heading");
-    heading.append(
-      element("h2", review.newCard.title),
-      element("span", review.action === "create" ? `新建 · v${review.newVersion}` : `v${review.oldVersion} → v${review.newVersion}`, "muted"),
-    );
-    const compare = element("div", undefined, "compare");
-    const newSide = element("div");
-    newSide.append(
-      element("h3", review.action === "create" ? "新记忆" : "新版本"),
-      field("正确行为", review.newCard.correct_behavior),
-      field("适用场景", review.newCard.applicability),
-    );
-    if (review.action === "create") {
-      compare.classList.add("create");
-      compare.append(newSide);
-    } else {
-      const oldSide = element("div");
-      oldSide.append(element("h3", "旧版本"), field("正确行为", review.oldCard.correct_behavior));
-      compare.append(oldSide, newSide);
-    }
-    const actions = element("div", undefined, "actions");
-    if (review.action === "create") {
-      actions.append(actionButton("删除这条记忆", "danger-button", async () => {
-        if (!window.confirm("永久删除这条新记忆和全部版本？")) return;
-        await api(`/api/memories/${encodeURIComponent(review.memoryId)}`, {
-          method: "DELETE",
-          body: JSON.stringify({ confirm_memory_id: review.memoryId }),
-        });
-        await renderReviews();
-      }));
-    } else {
-      actions.append(actionButton("恢复旧版", "secondary", async () => {
-        await api(`/api/memories/${encodeURIComponent(review.memoryId)}/rollback`, {
-          method: "POST",
-          body: JSON.stringify({ version_id: review.oldVersionId }),
-        });
-        await renderReviews();
-      }, "arrow-clockwise"));
-    }
-    actions.append(actionButton(review.action === "create" ? "确认保留" : "确认没问题", "primary", async () => {
-      await api(`/api/reviews/${encodeURIComponent(review.candidateId)}/confirm`, {
-        method: "POST",
-        body: "{}",
-      });
-      await renderReviews();
-    }, "check-circle"));
-    panel.append(heading, compare, actions);
-    list.append(panel);
-  }
-  content.append(list);
-}
 async function renderMemories() {
-  setPage("memories", "记忆库", "本机纠偏记忆，帮助 Agent 在相似场景中给出更准确的结果。");
+  setPage("memories", "项目知识", "只保存经历本项目工作后形成、未来仍有用的隐性知识。");
   const searchbar = element("div", undefined, "searchbar");
   const search = document.createElement("input");
-  search.placeholder = "搜索记忆标题、正确行为或适用场景…";
+  search.placeholder = "搜索知识标题、内容、原因或适用场景…";
   search.setAttribute("aria-label", "搜索记忆");
   const workspace = element("div", undefined, "repository-list");
   const runSearch = () => loadMemoryWorkspace(search.value, workspace).catch(showError);
@@ -191,7 +133,7 @@ function repositoryGroup(repository, memories) {
   const meta = element("div", `${repository.kind} · ${repository.path}`, "repository-meta muted");
   const table = element("div", undefined, "memory-table");
   const tableHead = element("div", undefined, "memory-table-head");
-  for (const label of ["标题", "正确行为", "适用场景", "版本", "操作"]) tableHead.append(element("span", label));
+  for (const label of ["标题", "项目知识", "适用场景", "版本", "操作"]) tableHead.append(element("span", label));
   table.append(tableHead);
   if (!memories.length) table.append(element("div", "没有匹配的记忆", "empty-row"));
   for (const memory of memories) table.append(memoryRow(memory));
@@ -203,7 +145,7 @@ function memoryRow(memory) {
   const row = element("div", undefined, "memory-row");
   row.append(
     element("div", memory.card.title, "memory-title"),
-    element("div", memory.card.correct_behavior, "memory-behavior"),
+    element("div", memory.card.knowledge, "memory-behavior"),
     element("div", memory.card.applicability || "—", "memory-scope"),
     element("div", `v${memory.activeVersion}`, "memory-version"),
   );
@@ -240,7 +182,7 @@ async function showVersions(wrapper, memory) {
   const panel = element("div", undefined, "version-panel");
   for (const version of versions) {
     const row = element("div", undefined, "version-row");
-    row.append(element("strong", `v${version.version}`), element("span", version.card.correct_behavior));
+    row.append(element("strong", `v${version.version}`), element("span", version.card.knowledge));
     if (version.id !== memory.activeVersionId) {
       row.append(actionButton("恢复", "secondary", async () => {
         await api(`/api/memories/${encodeURIComponent(memory.id)}/rollback`, {
@@ -259,19 +201,18 @@ async function renderModel() {
   const data = await api("/api/model");
   const stack = element("div", undefined, "settings-stack");
   const configuration = element("section", undefined, "settings-group");
-  configuration.append(element("h2", "连接配置"), element("p", "逐轮模型只生成候选；Gate/Refiner 模型在 25 回合或 compact 后沉淀长期记忆。保存后会分别验证三种严格 Schema。", "muted"));
+  configuration.append(element("h2", "连接配置"), element("p", "Gate/Refiner 在 25 个完成回合或 compact 后提炼项目隐性知识；每日整合只比较同仓 active 卡片。保存后会验证三份严格 Schema。", "muted"));
   const form = element("div", undefined, "form-grid");
   const base = inputWithValue(data.configuration?.base_url || "", "https://example.com/v1");
-  const model = inputWithValue(data.configuration?.model || "", "抽取模型名称");
-  const refinerModel = inputWithValue(data.configuration?.refiner_model || data.configuration?.model || "", "Gate/Refiner 模型名称");
+  const model = inputWithValue(data.configuration?.model || "", "Gate/Refiner 模型名称");
   const key = inputWithValue("", "API Key（不会回显）");
   key.type = "password";
-  form.append(labelNode("Base URL", base), labelNode("逐轮候选模型", model), labelNode("Gate/Refiner 模型", refinerModel), labelNode("API Key", key));
+  form.append(labelNode("Base URL", base), labelNode("Gate/Refiner 模型", model), labelNode("API Key", key));
   configuration.append(form, actionButton("保存并测试", "primary", async () => {
     try {
       await api("/api/model/configure", {
         method: "POST",
-        body: JSON.stringify({ base_url: base.value, model: model.value, refiner_model: refinerModel.value, api_key: key.value }),
+        body: JSON.stringify({ base_url: base.value, model: model.value, api_key: key.value }),
       });
       await api("/api/model/test", { method: "POST", body: "{}" });
       await renderModel();
@@ -285,7 +226,7 @@ async function renderModel() {
   automation.append(
     element("h2", "自动抽取"),
     element("p", `模型验证：${data.strict_schema_verified ? "已通过" : "未通过"} · 当前状态：${data.auto_extract ? "已开启" : "已关闭"}`, "muted"),
-    element("p", "开启即代表同意逐轮发送本轮 Prompt 和最终回答生成候选，并在 25 回合或 compact 检查点发送最多 40,000/80,000 字符的安全对话投影给 Gate/Refiner。原文只在任务内存中使用，不写入本地数据库或日志。", "muted"),
+    element("p", "开启即代表同意在 25 回合或 compact 检查点发送最多 40,000/80,000 字符的安全对话投影给 Gate/Refiner，并允许每日只发送同仓 active 知识卡检查合并与冲突。Stop 只累计 turn 引用；对话原文不写入本地数据库或日志。", "muted"),
   );
   const actions = element("div", undefined, "actions");
   const toggle = data.auto_extract
@@ -327,25 +268,3 @@ function labelNode(text, input) {
   label.append(element("span", text), input);
   return label;
 }
-const renderers = { reviews: renderReviews, memories: renderMemories, model: renderModel, health: renderHealth };
-for (const node of document.querySelectorAll("nav button")) {
-  node.addEventListener("click", () => renderers[node.dataset.page]().catch(showError));
-}
-async function start() {
-  const token = window.location.hash.slice(1);
-  if (token) {
-    const response = await fetch("/api/bootstrap", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-codex-local-bootstrap": "1" },
-      body: JSON.stringify({ token }),
-    });
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error || "bootstrap_failed");
-    state.csrf = body.csrf;
-    history.replaceState(null, "", "/");
-  } else {
-    state.csrf = (await api("/api/session")).csrf;
-  }
-  await renderMemories();
-}
-start().catch(showError);

@@ -11,20 +11,14 @@ export interface RepoIdentity {
   discoveredGitPath: string | null;
 }
 
+export type MemoryKind = "decision" | "invariant" | "pitfall" | "lesson";
+
 export interface MemoryCard {
+  kind: MemoryKind;
   title: string;
-  wrong_behavior: string;
-  correct_behavior: string;
+  knowledge: string;
+  rationale: string;
   applicability: string;
-}
-
-export type ExtractAction = "skip" | "reject" | "create" | "update" | "need_prev_turn";
-
-export interface ExtractResult {
-  action: ExtractAction;
-  target_memory_id: string | null;
-  base_version: number | null;
-  memory: MemoryCard | null;
 }
 
 export interface CompareCard extends MemoryCard {

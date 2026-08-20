@@ -27,6 +27,8 @@ const CSP = [
 interface Assets {
   html: string;
   javascript: string;
+  reviewsJavascript: string;
+  bootstrapJavascript: string;
   css: string;
   iconCss: string;
   iconFont: Buffer;
@@ -124,6 +126,20 @@ export class DashboardServer {
           "text/javascript; charset=utf-8",
           this.assets.javascript,
         );
+      } else if (url.pathname === "/reviews.js") {
+        sendText(
+          response,
+          200,
+          "text/javascript; charset=utf-8",
+          this.assets.reviewsJavascript,
+        );
+      } else if (url.pathname === "/bootstrap.js") {
+        sendText(
+          response,
+          200,
+          "text/javascript; charset=utf-8",
+          this.assets.bootstrapJavascript,
+        );
       } else if (url.pathname === "/app.css") {
         sendText(response, 200, "text/css; charset=utf-8", this.assets.css);
       } else if (url.pathname === "/icons.css") {
@@ -146,14 +162,32 @@ export function dashboardAssetsDirectory(moduleUrl = import.meta.url): string {
 }
 
 async function loadAssets(directory: string): Promise<Assets> {
-  const [html, javascript, css, iconCss, iconFont] = await Promise.all([
+  const [
+    html,
+    javascript,
+    reviewsJavascript,
+    bootstrapJavascript,
+    css,
+    iconCss,
+    iconFont,
+  ] = await Promise.all([
     readFile(join(directory, "index.html"), "utf8"),
     readFile(join(directory, "app.js"), "utf8"),
+    readFile(join(directory, "reviews.js"), "utf8"),
+    readFile(join(directory, "bootstrap.js"), "utf8"),
     readFile(join(directory, "app.css"), "utf8"),
     readFile(join(directory, "icons.css"), "utf8"),
     readFile(join(directory, "Phosphor-Thin.woff2")),
   ]);
-  return { html, javascript, css, iconCss, iconFont };
+  return {
+    html,
+    javascript,
+    reviewsJavascript,
+    bootstrapJavascript,
+    css,
+    iconCss,
+    iconFont,
+  };
 }
 
 function setSecurityHeaders(response: ServerResponse): void {

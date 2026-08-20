@@ -1,6 +1,6 @@
 # macOS 安装与运行
 
-支持 Node `>=24.15.0 <25`。首个 Codex CLI/rollout 白名单仅为完整版本 `0.148.0-alpha.9`；安装器发现其他版本会拒绝安装，运行时发现未知版本会跳过抽取并在健康页告警。
+支持 Node `>=24.15.0 <25`。Codex CLI 不设版本白名单；安装器记录版本，运行时按 rollout 必需事件结构判断兼容。未测试版本结构兼容即可使用，结构不兼容时安全跳过并告警。
 
 ```bash
 npm ci
@@ -17,13 +17,21 @@ node dist/cli.js install
 
 随后在 Codex 中检查 `/plugins`，并在 `/hooks` 审查、信任 `SessionStart`、`UserPromptSubmit`、`Stop`；重启 Codex 后新开会话。Hook 不会冷启动 Sidecar。
 
+安装后的宿主验收：
+
+```bash
+CLM_EXPECT_INSTALLED=1 npm run test:host
+```
+
 打开看板：
 
 ```bash
 node "$HOME/Library/Application Support/codex-local-memory/runtime/cli.js" dashboard url
 ```
 
-命令返回含一次性 URL fragment 的本机看板地址。看板只有待核对、记忆、模型、健康四页。模型页填写 HTTPS Base URL、逐轮候选模型、Gate/Refiner 模型和 API Key；Key 只进入 macOS Keychain，不支持 HTTP loopback 本地模型。点击「保存并测试」会分别验证候选、Gate、Refiner 三份 strict Schema；通过后，唯一开关用于同意逐轮 Prompt/最终回答，以及 25 回合或 compact 检查点最多 40,000/80,000 字符的安全投影外发。
+命令返回含一次性 URL fragment 的本机看板地址。看板只有待核对、记忆、模型、健康四页。模型页填写 HTTPS Base URL、Gate/Refiner/知识整合共用模型和 API Key；Key 只进入 macOS Keychain。点击「保存并测试」会验证 Gate、Refiner、知识整合三份 strict Schema；通过后，唯一开关用于同意 25 回合或 compact 检查点最多 40,000/80,000 字符的安全投影外发，以及每日只发送同仓 active 知识卡做合并/冲突检查。Stop 不调用模型。
+
+每日整合建议显示在「待核对」。建议本身不改变召回；确认 merge 后主卡升版、相关卡归档并保留全部历史。conflict 只展示，不自动选择胜者。系统不会为了减少卡片数量强行合并。
 
 卸载：
 

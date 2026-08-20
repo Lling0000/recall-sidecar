@@ -51,17 +51,14 @@ test("rejects subagent rollouts before extraction", async () => {
   );
 });
 
-test("P0-22 does not guess fields for an unknown full CLI version", async () => {
+test("P0-22 accepts a new CLI version when the rollout shape is compatible", async () => {
   const directory = await mkdtemp(join(tmpdir(), "clm-rollout-"));
   const target = join(directory, "rollout.jsonl");
   const fixture = await readFile(FIXTURE, "utf8");
   await writeFile(target, fixture.replace("0.148.0-alpha.9", "0.148.0-alpha.10"));
 
-  await assert.rejects(
-    projectRollout(target, "session-user-1", "turn-target"),
-    (error: unknown) =>
-      error instanceof ProjectionError && error.code === "unsupported_cli_version",
-  );
+  const projection = await projectRollout(target, "session-user-1", "turn-target");
+  assert.equal(projection.cliVersion, "0.148.0-alpha.10");
 });
 
 test("does not fall back to the latest complete turn", async () => {

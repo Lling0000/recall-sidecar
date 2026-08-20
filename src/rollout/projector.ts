@@ -1,16 +1,12 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
-import {
-  ROLLOUT_PROJECTION_VERSION,
-  SUPPORTED_CODEX_CLI_VERSIONS,
-} from "../constants.js";
+import { ROLLOUT_PROJECTION_VERSION } from "../constants.js";
 import type { RolloutProjection } from "../types.js";
 
 type ProjectionFailureCode =
   | "invalid_jsonl"
-  | "unsupported_cli_version"
-  | "fixture_mismatch"
+  | "incompatible_rollout_shape"
   | "subagent"
   | "turn_not_found"
   | "incomplete_turn"
@@ -126,7 +122,7 @@ export async function projectRollouts(
         const sessionId = stringValue(payload.id);
         const cliVersion = stringValue(payload.cli_version);
         if (!sessionId || !cliVersion) {
-          throw new ProjectionError("fixture_mismatch");
+          throw new ProjectionError("incompatible_rollout_shape");
         }
         const threadSource = stringValue(payload.thread_source);
         const source = stringValue(payload.source);
@@ -146,7 +142,7 @@ export async function projectRollouts(
 
       if (eventType === "task_started") {
         const turnId = stringValue(payload.turn_id);
-        if (!turnId) throw new ProjectionError("fixture_mismatch");
+        if (!turnId) throw new ProjectionError("incompatible_rollout_shape");
         sawTaskShape = true;
         if (currentWindow && expectedTurns.has(currentWindow.turnId)) {
           throw new ProjectionError("incomplete_turn");
@@ -181,7 +177,7 @@ export async function projectRollouts(
 
       if (eventType === "task_complete") {
         const turnId = stringValue(payload.turn_id);
-        if (!turnId) throw new ProjectionError("fixture_mismatch");
+        if (!turnId) throw new ProjectionError("incompatible_rollout_shape");
         sawTaskShape = true;
         if (turnId !== currentWindow.turnId) {
           if (expectedTurns.has(currentWindow.turnId) || expectedTurns.has(turnId)) {
@@ -202,17 +198,10 @@ export async function projectRollouts(
   }
 
   if (!sessionMeta || !sawTaskShape) {
-    throw new ProjectionError("fixture_mismatch");
+    throw new ProjectionError("incompatible_rollout_shape");
   }
   if (sessionMeta.sessionId !== expectedSessionId) {
     throw new ProjectionError("turn_not_found");
-  }
-  if (
-    !SUPPORTED_CODEX_CLI_VERSIONS.includes(
-      sessionMeta.cliVersion as (typeof SUPPORTED_CODEX_CLI_VERSIONS)[number],
-    )
-  ) {
-    throw new ProjectionError("unsupported_cli_version");
   }
   if (sessionMeta.isSubagent) throw new ProjectionError("subagent");
 
