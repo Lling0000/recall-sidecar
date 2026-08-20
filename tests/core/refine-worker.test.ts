@@ -196,6 +196,46 @@ test("checkpoint uses 25 new turns plus 5 processed context-only overlap turns",
   }
 });
 
+test("health only counts unresolved failed checkpoints", async () => {
+  const root = await mkdtemp(join(tmpdir(), "clm-failed-health-"));
+  const project = join(root, "project");
+  await mkdir(project, { recursive: true });
+  const database = new MemoryDatabase(join(root, "memory.sqlite"));
+  try {
+    const session = database.bindSession(
+      "codex",
+      "failed-health-session",
+      await resolveRepoIdentity(project),
+      FIXTURE.pathname,
+    );
+    database.captureStop(
+      session.id,
+      session.repoId,
+      "failed-health-turn",
+      FIXTURE.pathname,
+      true,
+    );
+    assert.ok(database.sessionRefines.enqueue(session.id, session.repoId, "compact"));
+    const failed = database.sessionRefines.claimNext();
+    assert.ok(failed);
+    database.sessionRefines.fail(failed.jobId, "model_invalid_structured_output");
+    assert.equal(database.healthSummary().failed_session_refines, 1);
+
+    assert.ok(database.sessionRefines.enqueue(session.id, session.repoId, "compact"));
+    const retry = database.sessionRefines.claimNext();
+    assert.ok(retry);
+    const batch = database.sessionRefines.batch(retry);
+    database.sessionRefines.finish(
+      retry.jobId,
+      new Set(batch.turns.map((turn) => turn.internal_turn_id)),
+      false,
+    );
+    assert.equal(database.healthSummary().failed_session_refines, 0);
+  } finally {
+    database.close();
+  }
+});
+
 test("failed Gate strict Schema test cannot enable auto_extract", async () => {
   const root = await mkdtemp(join(tmpdir(), "clm-manager-"));
   const database = new MemoryDatabase(join(root, "memory.sqlite"));

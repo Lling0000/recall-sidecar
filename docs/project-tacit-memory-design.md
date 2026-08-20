@@ -149,6 +149,8 @@ Refiner edit 在一个 `BEGIN IMMEDIATE` 事务中：
 
 任一步失败整批回滚。Gate/Refiner 失败或 stale 时，新 turn 保持 pending，后续检查点重新处理；现有 active 知识不变。最终 create/update 都进入待核对，但 Apply 后立即参与召回。
 
+健康页的 `failed_session_refines` 只统计仍含 pending eligible turn 的未解决失败；若后续检查点已处理完同一批 turn，旧失败只保留在 job/audit 历史中，不继续显示为当前故障。
+
 ## 8. 隐私与外发
 
 rollout 只按兼容的必需事件结构投影：

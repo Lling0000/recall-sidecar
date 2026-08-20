@@ -182,6 +182,8 @@ Gate 只返回 `should_refine + selected_turn_ids[≤8]`，selected 必须属于
 
 Refiner Apply 执行一个 `BEGIN IMMEDIATE`：重读批次内全部目标并比较 `base_version`、检查 repo/tombstone/source turn、写 memory version、切换 active version、更新 FTS、写 audit 和 `review_state=unverified`、递增仓库 generation 后提交。任一步失败整批回滚。模型调用期间不持有 DB 事务。若 `base_version` 已过期，整批不生效并记录失败，下一检查点重新读取当前状态；人工回滚、归档或删除不得被旧 Refiner 结果覆盖。
 
+健康页只把仍含 pending eligible turn 的失败检查点计为 `failed_session_refines`。同批 turn 被后续检查点成功处理后，旧失败 job/audit 作为历史保留，但不继续显示为当前故障。
+
 ### 3.5 覆盖、核对、回滚
 
 项目知识的权威证据是 Gate 选中的项目工作对话与当前代码/正式文档，不是旧知识，也不是「有没有打开看板」。

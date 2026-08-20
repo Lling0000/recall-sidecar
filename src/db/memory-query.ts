@@ -146,7 +146,13 @@ export class MemoryQueryStore {
         "SELECT count(*) AS count FROM session_turn_queue WHERE state='pending'",
       ),
       failed_session_refines: count(
-        "SELECT count(*) AS count FROM session_refine_jobs WHERE state='failed'",
+        `SELECT count(*) AS count FROM session_refine_jobs sr
+         WHERE sr.state='failed' AND EXISTS (
+           SELECT 1 FROM session_refine_job_turns jt
+           JOIN session_turn_queue q ON q.turn_id=jt.turn_id
+           WHERE jt.session_refine_job_id=sr.id
+             AND jt.role='eligible' AND q.state='pending'
+         )`,
       ),
       remote_warnings: count(
         "SELECT count(*) AS count FROM repositories WHERE remote_warning=1",

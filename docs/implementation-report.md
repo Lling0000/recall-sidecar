@@ -18,8 +18,8 @@
 
 ## 验证结果
 
-- P0-01 至 P0-25：全部通过；核心测试 55/55。
-- Docker 核心：固定 Node 24.15.0 镜像内 typecheck、lint、结构检查、55/55 核心测试、文档一致性和 build 全部通过。
+- P0-01 至 P0-25：全部通过；核心测试 56/56。
+- Docker 核心：固定 Node 24.15.0 镜像内 typecheck、lint、结构检查、56/56 核心测试、文档一致性和 build 全部通过。
 - macOS 宿主：3/3，通过真实 Keychain、Unix socket/权限、plugin、launchd、dashboard；未使用容器结果替代。
 - Codex plugin validator：通过。
 - Codex CLI：`codex-local-memory@codex-local-memory-local` 为 `installed, enabled`。
@@ -27,7 +27,7 @@
 - Hook 实跑：在正式安装目录和真实 `$PLUGIN_ROOT` 下，三个包装命令均 exit 0、stderr 为空；无匹配知识时 UserPromptSubmit 空注入，Stop stdout 精确为 `{"continue":true}`。
 - 模型复测：`gpt-5.5` 的 Gate、Refiner、知识整合三份 strict Schema 共 3 次请求通过；知识整合再从两张同范围生成代码坑点与一张无关 Socket 决策中，只输出前两张的无损 merge，一次通过 ID/version/范围校验。全部为隔离合成内容，不写正式数据库。Stop 与 UserPromptSubmit 不调用模型。
 - 项目隐性知识回归：Gate 从隐藏生成约束、普通文件事实和一次性格式要求中只选中隐藏约束；Refiner 生成中文 `pitfall`。首次矛盾 Gate 输出被严格语义校验拒绝，强化不变量后再次通过；未写正式数据库。
-- 正式运行状态：`gpt-5.5`、三份 strict Schema 已验证、`auto_extract=true`、SQLite `ok`、failed/pending consolidation 均为 0；旧版 5 张不兼容四字段卡已按用户授权通过 Sidecar 永久清除，正式库当前无旧知识正文。
+- 正式运行状态：`gpt-5.5`、三份 strict Schema 已验证、`auto_extract=true`、SQLite `ok`、failed/pending consolidation 均为 0；旧版 5 张不兼容四字段卡已按用户授权通过 Sidecar 永久清除。随后正式 Gate/Refiner 已为 cloud-server 形成 4 张五字段 active 知识卡并进入待核对，证明端到端写回可用。
 - 最终 lint、结构检查、类型检查、构建和文档一致性：全部通过。
 
 ## 剩余 P1
