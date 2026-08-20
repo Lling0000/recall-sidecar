@@ -9,6 +9,7 @@ export function recordStaleCandidate(
   core: DatabaseCore,
   jobs: JobStore,
   jobId: string,
+  editOrdinal: number,
   repoId: string,
   targetId: string,
   baseVersion: number,
@@ -19,13 +20,14 @@ export function recordStaleCandidate(
   core.db
     .prepare(
       `INSERT INTO candidates(
-        id,refine_job_id,repo_id,action,target_id,base_version,revision,
+        id,refine_job_id,edit_ordinal,repo_id,action,target_id,base_version,revision,
         content,state,review_state,created_at
-      ) VALUES (?,?,?,?,?,?,?,?,'stale','none',?)`,
+      ) VALUES (?,?,?,?,?,?,?,?,?,'stale','none',?)`,
     )
     .run(
       candidateId,
       jobId,
+      editOrdinal,
       repoId,
       "update",
       targetId,

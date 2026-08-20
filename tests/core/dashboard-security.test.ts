@@ -132,6 +132,8 @@ test("dashboard exposes exactly four product pages without unsafe DOM APIs", asy
   assert.match(script, /保存并测试/u);
   assert.match(script, /关闭自动抽取/u);
   assert.match(script, /冲突不会自动选择胜者/u);
+  assert.match(script, /确认拆分/u);
+  assert.match(script, /查看形成依据/u);
   assert.match(script, /element\("strong", repository\.displayName\)/u);
   assert.doesNotMatch(page, /data-page="(?:home|settings|export)"/u);
 });

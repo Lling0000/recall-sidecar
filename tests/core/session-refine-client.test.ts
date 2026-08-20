@@ -108,3 +108,74 @@ test("Gate rejects a context-only overlap turn as a knowledge source", async () 
     ),
   );
 });
+
+test("Refiner allows atomic edits from one turn but rejects long cards and duplicate targets", async () => {
+  const configuration = createModelConfiguration(
+    "https://model.example/v1",
+    "knowledge-model",
+  );
+  const input = {
+    turns: [
+      {
+        turn_id: "turn-atomic",
+        user_prompt: "这轮明确了两个独立规则。",
+        final_answer: "两个规则均已验证。",
+      },
+    ],
+    eligible_turn_ids: ["turn-atomic"],
+    selected_turn_ids: ["turn-atomic"],
+    active_memories: [{ id: "memory-1", version: 1, ...CARD }],
+  };
+  const atomic = new SessionRefineClient(async () =>
+    response({
+      edits: [
+        {
+          action: "create",
+          source_turn_id: "turn-atomic",
+          target_memory_id: null,
+          base_version: null,
+          memory: { ...CARD, title: "原子规则一" },
+        },
+        {
+          action: "create",
+          source_turn_id: "turn-atomic",
+          target_memory_id: null,
+          base_version: null,
+          memory: { ...CARD, title: "原子规则二" },
+        },
+      ],
+    }),
+  );
+  assert.equal(
+    (await atomic.refine(configuration, "secret", input)).result.edits.length,
+    2,
+  );
+
+  const tooLong = new SessionRefineClient(async () =>
+    response({
+      edits: [
+        {
+          action: "create",
+          source_turn_id: "turn-atomic",
+          target_memory_id: null,
+          base_version: null,
+          memory: { ...CARD, knowledge: "长".repeat(121) },
+        },
+      ],
+    }),
+  );
+  await assert.rejects(tooLong.refine(configuration, "secret", input));
+
+  const duplicateTarget = new SessionRefineClient(async () =>
+    response({
+      edits: [1, 2].map((index) => ({
+        action: "update",
+        source_turn_id: "turn-atomic",
+        target_memory_id: "memory-1",
+        base_version: 1,
+        memory: { ...CARD, title: `重复更新 ${index}` },
+      })),
+    }),
+  );
+  await assert.rejects(duplicateTarget.refine(configuration, "secret", input));
+});

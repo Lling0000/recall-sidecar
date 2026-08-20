@@ -82,7 +82,7 @@ export function validateRefinerResult(
   }
   const selected = new Set(input.selected_turn_ids);
   const active = new Map(input.active_memories.map((memory) => [memory.id, memory]));
-  const usedTurns = new Set<string>();
+  const usedTargets = new Set<string>();
   const edits = record.edits.map((item) => {
     const edit = exactObject(item, [
       "action",
@@ -94,14 +94,19 @@ export function validateRefinerResult(
     if (
       (edit.action !== "create" && edit.action !== "update") ||
       typeof edit.source_turn_id !== "string" ||
-      !selected.has(edit.source_turn_id) ||
-      usedTurns.has(edit.source_turn_id)
+      !selected.has(edit.source_turn_id)
     ) {
       throw new ModelError("model_invalid_structured_output");
     }
-    usedTurns.add(edit.source_turn_id);
     const memory = validateMemoryCard(edit.memory);
     validateEditTarget(edit, active);
+    if (edit.action === "update") {
+      const target = edit.target_memory_id as string;
+      if (usedTargets.has(target)) {
+        throw new ModelError("model_invalid_structured_output");
+      }
+      usedTargets.add(target);
+    }
     return {
       action: edit.action,
       source_turn_id: edit.source_turn_id,

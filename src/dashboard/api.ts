@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { TESTED_CODEX_CLI_VERSIONS } from "../constants.js";
+import { MODEL_SCHEMA_REVISION, TESTED_CODEX_CLI_VERSIONS } from "../constants.js";
 import type { MemoryDatabase } from "../db/database.js";
 import type { ModelManager } from "../model/manager.js";
 import { readJsonBody, requiredString, sendJson } from "./http-utils.js";
@@ -123,6 +123,9 @@ export class DashboardApi {
         configuration,
         strict_schema_verified:
           this.database.getSetting("strict_schema_verified") === "true",
+        schema_revision: MODEL_SCHEMA_REVISION,
+        verified_schema_revision:
+          this.database.getSetting("verified_schema_revision") || null,
         auto_extract: this.database.extractionEnabled(),
         last_error: this.database.getSetting("model_last_error") || null,
       });
@@ -162,7 +165,7 @@ export class DashboardApi {
         this.database.ignoreConsolidation(suggestionId);
         sendJson(response, 200, { ok: true });
       } else {
-        const state = this.database.applyConsolidationMerge(suggestionId);
+        const state = this.database.applyConsolidationSuggestion(suggestionId);
         sendJson(response, 200, { ok: state === "applied", state });
       }
       return true;

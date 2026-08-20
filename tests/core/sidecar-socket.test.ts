@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { MODEL_SCHEMA_REVISION } from "../../src/constants.js";
 import { MemoryDatabase } from "../../src/db/database.js";
 import { callSidecar } from "../../src/hooks/ipc-client.js";
 import { SidecarService } from "../../src/sidecar/service.js";
@@ -27,6 +28,7 @@ test("Unix socket binds sessions and enqueues one idempotent Stop", async () => 
   ]) {
     database.setSetting(key, "true");
   }
+  database.setSetting("verified_schema_revision", MODEL_SCHEMA_REVISION);
   const service = new SidecarService(database, {
     allowedTranscriptRoots: [transcripts],
   });

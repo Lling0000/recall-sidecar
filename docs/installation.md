@@ -29,9 +29,9 @@ CLM_EXPECT_INSTALLED=1 npm run test:host
 node "$HOME/Library/Application Support/codex-local-memory/runtime/cli.js" dashboard url
 ```
 
-命令返回含一次性 URL fragment 的本机看板地址。看板只有待核对、记忆、模型、健康四页。模型页填写 HTTPS Base URL、Gate/Refiner/知识整合共用模型和 API Key；Key 只进入 macOS Keychain。点击「保存并测试」会验证 Gate、Refiner、知识整合三份 strict Schema；通过后，唯一开关用于同意 25 回合或 compact 检查点最多 40,000/80,000 字符的安全投影外发，以及每日只发送同仓 active 知识卡做合并/冲突检查。Stop 不调用模型。
+命令返回含一次性 URL fragment 的本机看板地址。看板只有待核对、记忆、模型、健康四页。模型页填写 HTTPS Base URL、Gate/Refiner/知识整合共用模型和 API Key；Key 只进入 macOS Keychain。点击「保存并测试」会验证 Gate、Refiner、知识整合三份 strict Schema；通过后，唯一开关用于同意 25 回合或 compact 检查点最多 40,000/80,000 字符的安全投影外发，以及每日只发送同仓 active 知识卡做合并/冲突/split 检查。Stop 不调用模型。软件升级导致 Schema revision 变化时会自动关闭提炼，必须重新测试后再开启。
 
-每日整合建议显示在「待核对」。建议本身不改变召回；确认 merge 后主卡升版、相关卡归档并保留全部历史。conflict 只展示，不自动选择胜者。系统不会为了减少卡片数量强行合并。
+每日整合建议显示在「待核对」。建议本身不改变召回；确认 merge 后主卡升版、相关卡归档；确认 split 后原卡升版并创建其余原子卡。conflict 只展示，不自动选择胜者。系统不会为了减少卡片数量强行合并，形成依据默认折叠。
 
 卸载：
 

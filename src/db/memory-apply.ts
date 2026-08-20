@@ -31,6 +31,7 @@ export class MemoryApplyStore {
     if (stale.length > 0) {
       this.core.transaction(() => {
         for (const edit of stale) {
+          const editOrdinal = edits.indexOf(edit);
           const source = candidates.find(
             (candidate) => candidate.turn_id === edit.source_turn_id,
           );
@@ -38,12 +39,13 @@ export class MemoryApplyStore {
             source &&
             edit.target_memory_id &&
             edit.base_version &&
-            !this.existing(source.job_id)
+            !this.existing(source.job_id, editOrdinal)
           ) {
             recordStaleCandidate(
               this.core,
               this.jobs,
               source.job_id,
+              editOrdinal,
               repoId,
               edit.target_memory_id,
               edit.base_version,
@@ -57,14 +59,15 @@ export class MemoryApplyStore {
     }
     return applySessionEdits(edits, candidates, {
       transaction: (operation) => this.core.transaction(operation),
-      existing: (jobId) => this.existing(jobId),
+      existing: (jobId, editOrdinal) => this.existing(jobId, editOrdinal),
       updateIsCurrent: (edit) => this.updateIsCurrent(repoId, edit),
-      create: (source, edit) => {
+      create: (source, edit, editOrdinal) => {
         if (edit.target_memory_id !== null || edit.base_version !== null) {
           throw new Error("session_refine_create_semantics");
         }
         return this.create(
           source.job_id,
+          editOrdinal,
           repoId,
           validateMemoryCard(edit.memory),
           sessionId,
@@ -72,10 +75,11 @@ export class MemoryApplyStore {
           2,
         );
       },
-      update: (source, edit) => {
+      update: (source, edit, editOrdinal) => {
         const card = validateMemoryCard(edit.memory);
         return this.update(
           source.job_id,
+          editOrdinal,
           repoId,
           edit.target_memory_id,
           edit.base_version,
@@ -88,7 +92,7 @@ export class MemoryApplyStore {
     });
   }
 
-  private existing(jobId: string): AppliedCandidate | null {
+  private existing(jobId: string, editOrdinal: number): AppliedCandidate | null {
     const candidate = row<{
       id: string;
       state: AppliedCandidate["state"];
@@ -96,9 +100,10 @@ export class MemoryApplyStore {
     }>(
       this.core.db
         .prepare(
-          "SELECT id,state,applied_memory_id FROM candidates WHERE refine_job_id=?",
+          `SELECT id,state,applied_memory_id FROM candidates
+           WHERE refine_job_id=? AND edit_ordinal=?`,
         )
-        .get(jobId),
+        .get(jobId, editOrdinal),
     );
     if (!candidate) return null;
     const version = candidate.applied_memory_id
@@ -121,6 +126,7 @@ export class MemoryApplyStore {
 
   private create(
     jobId: string,
+    editOrdinal: number,
     repoId: string,
     card: MemoryCard,
     sourceSessionId: string,
@@ -153,13 +159,14 @@ export class MemoryApplyStore {
     this.core.db
       .prepare(
         `INSERT INTO candidates(
-          id,refine_job_id,repo_id,action,target_id,applied_memory_id,
+          id,refine_job_id,edit_ordinal,repo_id,action,target_id,applied_memory_id,
           base_version,revision,content,state,review_state,created_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,'applied','unverified',?)`,
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,'applied','unverified',?)`,
       )
       .run(
         candidateId,
         jobId,
+        editOrdinal,
         repoId,
         "create",
         null,
@@ -175,6 +182,7 @@ export class MemoryApplyStore {
 
   private update(
     jobId: string,
+    editOrdinal: number,
     repoId: string,
     targetId: string | null,
     baseVersion: number | null,
@@ -195,6 +203,7 @@ export class MemoryApplyStore {
         this.core,
         this.jobs,
         jobId,
+        editOrdinal,
         repoId,
         targetId,
         baseVersion,
@@ -233,13 +242,14 @@ export class MemoryApplyStore {
     this.core.db
       .prepare(
         `INSERT INTO candidates(
-          id,refine_job_id,repo_id,action,target_id,applied_memory_id,
+          id,refine_job_id,edit_ordinal,repo_id,action,target_id,applied_memory_id,
           base_version,revision,content,state,review_state,created_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,'applied','unverified',?)`,
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,'applied','unverified',?)`,
       )
       .run(
         candidateId,
         jobId,
+        editOrdinal,
         repoId,
         "update",
         targetId,

@@ -16,4 +16,6 @@
 
 检查点测试覆盖：Stop 只累计 turn；第 24 个不触发、第 25 个触发；每批 25 个新 turn＋5 个 context-only overlap；overlap 不能成为 edit 来源；未进入字符窗口的 turn 保持 pending；结构兼容的新 CLI 可投影。真实模型回归要求 Gate 排除普通代码事实和一次性要求，Refiner 只生成项目隐性知识卡。该回归不写正式数据库。
 
-定时整合测试覆盖：24 小时边界持久化、三份 strict Schema、建议不改变召回、精确版本去重、范围扩大拒绝、merge 确认后的主卡升版/相关卡归档/历史保留、conflict 不自动裁决，以及成功复测后只清理 failed job 元数据而保留错误 audit。
+定时整合测试覆盖：单卡调度、24 小时边界持久化、三份 strict Schema、建议不改变召回、精确版本去重、范围扩大拒绝、merge 确认后的主卡升版/相关卡归档/历史保留、split 确认后的原卡升版/新卡创建、conflict 不自动裁决，以及成功复测后只清理 failed job 元数据而保留错误 audit。
+
+短注入测试覆盖：新卡 knowledge≤120、历史 knowledge≤240 仍可读取但召回截到 120、同一 source turn 多 edit 原子 Apply、重复 update target 拒绝，以及旧 candidates/整合建议表的原子迁移。

@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { validateMemoryCard } from "../security/memory-card.js";
+import {
+  validateMemoryCard,
+  validateStoredMemoryCard,
+} from "../security/memory-card.js";
 import type { MemoryCard } from "../types.js";
+import { applyConsolidationSplit } from "./consolidation-split-apply.js";
 import type { DatabaseCore } from "./core.js";
 import { replaceMemoryFts } from "./fts-writer.js";
 import { now, parseCard, row, topicKey } from "./helpers.js";
@@ -36,9 +40,7 @@ export class KnowledgeConsolidationAdmin {
           repoDisplayName: value.display_name,
           target,
           related: related as ConsolidationReviewCard[],
-          proposedMemory: value.proposed_content
-            ? parseCard(value.proposed_content)
-            : null,
+          proposedMemories: parseStoredProposedCards(value.proposed_content),
           reason: value.reason,
         },
       ];
@@ -58,29 +60,55 @@ export class KnowledgeConsolidationAdmin {
     });
   }
 
-  applyMerge(suggestionId: string): "applied" | "stale" {
+  apply(suggestionId: string): "applied" | "stale" {
     return this.core.transaction(() => {
-      const suggestion = this.pendingMerge(suggestionId);
-      if (!suggestion) throw new Error("consolidation_merge_not_pending");
+      const suggestion = this.pendingApplicable(suggestionId);
+      if (!suggestion) throw new Error("consolidation_suggestion_not_applicable");
       const target = this.activeVersion(
         suggestion.repo_id,
         suggestion.target_memory_id,
         suggestion.target_base_version,
       );
-      const related = parseReferences(suggestion.related_json).map((reference) =>
+      if (!target) {
+        this.markStale(suggestionId);
+        return "stale";
+      }
+      const references = parseReferences(suggestion.related_json);
+      let proposed: MemoryCard[];
+      try {
+        proposed = parseProposedCards(suggestion.proposed_content);
+      } catch {
+        this.markStale(suggestionId);
+        return "stale";
+      }
+      if (suggestion.kind === "split") {
+        return applyConsolidationSplit(
+          this.core,
+          suggestionId,
+          suggestion.repo_id,
+          target,
+          proposed,
+          references.length,
+        );
+      }
+      const related = references.map((reference) =>
         this.activeVersion(
           suggestion.repo_id,
           reference.memory_id,
           reference.base_version,
         ),
       );
-      if (!target || related.some((memory) => !memory)) {
+      if (related.some((memory) => !memory)) {
         this.markStale(suggestionId);
         return "stale";
       }
-      const proposed = validateMemoryCard(JSON.parse(suggestion.proposed_content));
+      const merged = proposed[0];
       const relatedValues = related as ActiveVersion[];
-      if (!validMergeShape(proposed, target, relatedValues)) {
+      if (
+        !merged ||
+        proposed.length !== 1 ||
+        !validMergeShape(merged, target, relatedValues)
+      ) {
         this.markStale(suggestionId);
         return "stale";
       }
@@ -98,14 +126,14 @@ export class KnowledgeConsolidationAdmin {
           `INSERT INTO memory_versions(id,memory_id,version_no,content,created_at)
            VALUES (?,?,?,?,?)`,
         )
-        .run(versionId, target.id, version, JSON.stringify(proposed), timestamp);
+        .run(versionId, target.id, version, JSON.stringify(merged), timestamp);
       this.core.db
         .prepare(
           `UPDATE memories SET active_version_id=?,topic_key=?,updated_at=?
            WHERE id=? AND state='active'`,
         )
-        .run(versionId, topicKey(proposed.title), timestamp, target.id);
-      replaceMemoryFts(this.core, target.id, suggestion.repo_id, proposed);
+        .run(versionId, topicKey(merged.title), timestamp, target.id);
+      replaceMemoryFts(this.core, target.id, suggestion.repo_id, merged);
       this.core.db
         .prepare(
           "UPDATE knowledge_consolidation_suggestions SET state='applied',updated_at=? WHERE id=?",
@@ -122,13 +150,14 @@ export class KnowledgeConsolidationAdmin {
     });
   }
 
-  private pendingMerge(suggestionId: string): MergeRow | null {
-    return row<MergeRow>(
+  private pendingApplicable(suggestionId: string): ApplicableRow | null {
+    return row<ApplicableRow>(
       this.core.db
         .prepare(
-          `SELECT repo_id,target_memory_id,target_base_version,related_json,proposed_content
+          `SELECT kind,repo_id,target_memory_id,target_base_version,related_json,proposed_content
            FROM knowledge_consolidation_suggestions
-           WHERE id=? AND kind='merge' AND state='pending' AND proposed_content IS NOT NULL`,
+           WHERE id=? AND kind IN ('merge','split') AND state='pending'
+             AND proposed_content IS NOT NULL`,
         )
         .get(suggestionId),
     );
@@ -194,6 +223,22 @@ function validMergeShape(
   );
 }
 
+function parseProposedCards(value: string | null): MemoryCard[] {
+  if (!value) return [];
+  const parsed = JSON.parse(value) as unknown;
+  return Array.isArray(parsed)
+    ? parsed.map((memory) => validateMemoryCard(memory))
+    : [validateMemoryCard(parsed)];
+}
+
+function parseStoredProposedCards(value: string | null): MemoryCard[] {
+  if (!value) return [];
+  const parsed = JSON.parse(value) as unknown;
+  return Array.isArray(parsed)
+    ? parsed.map((memory) => validateStoredMemoryCard(memory))
+    : [validateStoredMemoryCard(parsed)];
+}
+
 function parseReferences(
   value: string,
 ): Array<{ memory_id: string; base_version: number }> {
@@ -215,7 +260,7 @@ function parseReferences(
 interface SuggestionRow {
   id: string;
   repo_id: string;
-  kind: "merge" | "conflict";
+  kind: "merge" | "conflict" | "split";
   target_memory_id: string;
   target_base_version: number;
   related_json: string;
@@ -224,7 +269,8 @@ interface SuggestionRow {
   display_name: string;
 }
 
-interface MergeRow {
+interface ApplicableRow {
+  kind: "merge" | "split";
   repo_id: string;
   target_memory_id: string;
   target_base_version: number;

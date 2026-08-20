@@ -67,11 +67,13 @@ Codex 兼容性按 rollout 必需事件结构判断，不设 CLI 完整版本白
 
 Prompt 和最终回答只在检查点 job 内存中存在，也是启用 `auto_extract` 的捆绑必选外发字段。看板只提供一个自动知识开关：开启即同意 25 回合/compact 检查点外发和只含 active 卡片的每日整合，关闭即撤回并停止新检查点与整合。外发前仅遮蔽 PAT、JWT、PEM 和高熵密钥；普通文本、路径和文件夹名不处理。DB、WAL、备份、FTS 和日志禁止保存 Prompt/回答正文。只可保存 session/turn 引用、不可逆投影摘要、状态、错误元数据和项目知识卡；重试重新读取同一 rollout，文件不可用则失败。
 
-Stop 只累计 turn 引用，不调用模型。每个 session 的 25 个新 turn 或 `compact` 触发检查点；额外带前 5 个已处理 turn 作为 context-only overlap。Gate 最多读取 40,000 字符，只能选择本批新 turn；Refiner 最多读取 80,000 字符并输出最多 8 个 create/update edit。只保存项目工作中形成、未来仍有用且不能简单从当前代码或文档重读得到的 `decision | invariant | pitfall | lesson`。普通代码事实、目录摘要、一次性要求、进度、个人偏好、通用流程和无证据推测都不保存。完整规则以 `docs/project-tacit-memory-design.md` 为准。
+Stop 只累计 turn 引用，不调用模型。每个 session 的 25 个新 turn 或 `compact` 触发检查点；额外带前 5 个已处理 turn 作为 context-only overlap。Gate 最多读取 40,000 字符，只能选择本批新 turn；Refiner 最多读取 80,000 字符并输出最多 8 个 create/update edit。同一来源 turn 可支持多张互不重复的原子卡，但同一 active target 每批最多 update 一次。只保存项目工作中形成、未来仍有用且不能简单从当前代码或文档重读得到的 `decision | invariant | pitfall | lesson`。普通代码事实、目录摘要、一次性要求、进度、个人偏好、通用流程和无证据推测都不保存。完整规则以 `docs/project-tacit-memory-design.md` 为准。
 
 ## 抽取模型合同
 
-模型 Base URL 只接受 HTTPS，必须使用 API Key，不支持 HTTP loopback 本地模型。保存配置时必须分别验证 Gate、Refiner 与定时知识整合三份正式 strict Schema；任一不支持时 `auto_extract` 保持关闭。项目知识卡固定为：
+模型 Base URL 只接受 HTTPS，必须使用 API Key，不支持 HTTP loopback 本地模型。保存配置时必须分别验证 Gate、Refiner 与定时知识整合三份正式 strict Schema；任一不支持时 `auto_extract` 保持关闭。软件内置 Schema revision 变化时旧验证立即失效并自动关闭，必须重新测试。项目知识卡固定为：
+
+当前 `MODEL_SCHEMA_REVISION` 为 `tacit-atomic-split/v1`。
 
 ```json
 {
@@ -81,18 +83,18 @@ Stop 只累计 turn 引用，不调用模型。每个 session 的 25 个新 turn
   "properties": {
     "kind": { "enum": ["decision", "invariant", "pitfall", "lesson"] },
     "title": { "type": "string", "minLength": 1, "maxLength": 40 },
-    "knowledge": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "knowledge": { "type": "string", "minLength": 1, "maxLength": 120 },
     "rationale": { "type": "string", "minLength": 1, "maxLength": 200 },
     "applicability": { "type": "string", "maxLength": 80 }
   }
 }
 ```
 
-Gate Schema 固定为 `should_refine + selected_turn_ids[≤8]`；selected 只能来自 eligible turn，不能来自 overlap。Refiner edit 固定为 `action=create|update + source_turn_id + target/base + memory`。产品不设置每日模型请求次数上限；429/5xx 只允许一次有界传输重试，不得解析 repair。
+Gate Schema 固定为 `should_refine + selected_turn_ids[≤8]`；selected 只能来自 eligible turn，不能来自 overlap。Refiner edit 固定为 `action=create|update + source_turn_id + target/base + memory`；一张卡只表达一个可独立召回的结论，knowledge 最多 120 字。同一 source turn 可重复，update target 不可重复。产品不设置每日模型请求次数上限；429/5xx 只允许一次有界传输重试，不得解析 repair。
 
 Refiner Apply 使用 `BEGIN IMMEDIATE`。提交前重读所有目标并校验 `base_version`、tombstone、repo 与 eligible 来源 turn；任何失败整体回滚。过期结果不生效，等待后续检查点重新读取，不覆盖人工动作。active 只在 Refiner 事务提交后可见；turn 引用、overlap、Gate 和 Hook 都不写 memory/FTS。
 
-Sidecar 每 24 小时在进程内为 active 知识不少于 2 条的 repo 运行一次知识整合，不安装额外 cron/launchd。整合只读取同仓 active 卡片，最多 80,000 字符；只生成最多 8 条 `merge|conflict` 待核对建议。合并只允许同 kind、同等 applicability、同主题且无冲突的重复或互补卡片，不能扩大范围或损失非重复知识。建议不自动生效；确认 merge 后事务化更新主卡版本并归档相关卡，禁止自动硬删除。conflict 不自动裁决。活跃数量不是优化指标。
+Sidecar 每 24 小时在进程内为 active 知识不少于 1 条的 repo 运行一次知识整合，不安装额外 cron/launchd。整合只读取同仓 active 卡片，最多 80,000 字符；只生成最多 8 条 `merge|conflict|split` 待核对建议。合并只允许同 kind、同等 applicability、同主题且无冲突的重复或互补卡片，不能扩大范围或损失非重复知识。split 只允许把一张过载卡建议拆成 2～8 张同 kind、knowledge≤120 的原子卡。建议不自动生效；确认 merge 后事务化更新主卡版本并归档相关卡，确认 split 后原卡升版并创建其余卡，禁止自动硬删除。conflict 不自动裁决。活跃数量不是优化指标。
 
 ## 召回 stdout 与 IPC
 
@@ -108,7 +110,7 @@ UserPromptSubmit 成功时只输出：
 }
 ```
 
-模板见 Spec 3.7。查询必须先限定 `repo_id`，再对用户输入 tokenize/quote 后做 FTS；中文用 trigram 或 CJK n-gram。最多 3 条、总计不超过 2,000 字符，默认只渲染 kind + title + knowledge + 可选 applicability；rationale 默认不注入。失败返回空注入。
+模板见 Spec 3.7。查询必须先限定 `repo_id`，再对用户输入 tokenize/quote 后做 FTS；中文用 trigram 或 CJK n-gram。最多 3 条、总计不超过 2,000 字符，默认只渲染 kind + title + knowledge + 可选 applicability；每条 knowledge 最多注入 120 字，历史长卡超出部分加省略号；rationale 默认不注入。失败返回空注入。
 
 Hook → Sidecar 使用 Unix socket 和一行一个 JSON 请求。UserPromptSubmit 截止 250 ms；SessionStart、Stop 截止 1 秒且 Stop 只入队。Sidecar 不可用时 fail-open。只有 Sidecar 可以写 SQLite。
 

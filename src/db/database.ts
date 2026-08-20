@@ -183,8 +183,8 @@ export class MemoryDatabase {
     this.consolidationAdmin.ignore(suggestionId);
   }
 
-  applyConsolidationMerge(suggestionId: string): "applied" | "stale" {
-    return this.consolidationAdmin.applyMerge(suggestionId);
+  applyConsolidationSuggestion(suggestionId: string): "applied" | "stale" {
+    return this.consolidationAdmin.apply(suggestionId);
   }
 
   healthSummary(): Record<string, unknown> {

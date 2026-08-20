@@ -118,12 +118,12 @@ export interface ConsolidationReviewCard {
 
 export interface PendingConsolidationReview {
   suggestionId: string;
-  kind: "merge" | "conflict";
+  kind: "merge" | "conflict" | "split";
   repoId: string;
   repoDisplayName: string;
   target: ConsolidationReviewCard;
   related: ConsolidationReviewCard[];
-  proposedMemory: MemoryCard | null;
+  proposedMemories: MemoryCard[];
   reason: string;
 }
 

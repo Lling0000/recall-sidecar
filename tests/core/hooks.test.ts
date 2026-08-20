@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { MODEL_SCHEMA_REVISION } from "../../src/constants.js";
 import { MemoryDatabase } from "../../src/db/database.js";
 import { runHook } from "../../src/hooks/runner.js";
 import { SidecarService } from "../../src/sidecar/service.js";
@@ -106,6 +107,7 @@ test("SessionStart compact schedules Gate for pending turn references", async ()
   ]) {
     database.setSetting(key, "true");
   }
+  database.setSetting("verified_schema_revision", MODEL_SCHEMA_REVISION);
   let wakes = 0;
   const server = new SidecarSocketServer(
     socket,

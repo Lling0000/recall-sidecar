@@ -5,6 +5,7 @@ import {
   KEYCHAIN_REFERENCE,
   KEYCHAIN_SERVICE,
   LAUNCHD_LABEL,
+  MODEL_SCHEMA_REVISION,
   PLUGIN_DIRECTORY_NAME,
   SUPPORTED_NODE_RANGE,
   TESTED_CODEX_CLI_VERSIONS,
@@ -45,6 +46,7 @@ for (const value of [
   KEYCHAIN_ACCOUNT,
   KEYCHAIN_REFERENCE,
   LAUNCHD_LABEL,
+  MODEL_SCHEMA_REVISION,
   PLUGIN_DIRECTORY_NAME,
 ]) {
   if (!spec.includes(value) || !agents.includes(value)) {
@@ -63,9 +65,19 @@ assertEqual(
   "Refiner edit limit",
 );
 assertEqual(
+  REFINER_SCHEMA.properties.edits.items.properties.memory.properties.knowledge.maxLength.toString(),
+  "120",
+  "Knowledge character limit",
+);
+assertEqual(
   CONSOLIDATION_SCHEMA.properties.suggestions.maxItems.toString(),
   "8",
   "Consolidation suggestion limit",
+);
+assertEqual(
+  CONSOLIDATION_SCHEMA.properties.suggestions.items.properties.kind.enum.join(","),
+  "merge,conflict,split",
+  "Consolidation suggestion kinds",
 );
 
 const testDirectory = join(root, "tests", "core");

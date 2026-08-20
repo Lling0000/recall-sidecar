@@ -201,7 +201,7 @@ async function renderModel() {
   const data = await api("/api/model");
   const stack = element("div", undefined, "settings-stack");
   const configuration = element("section", undefined, "settings-group");
-  configuration.append(element("h2", "连接配置"), element("p", "Gate/Refiner 在 25 个完成回合或 compact 后提炼项目隐性知识；每日整合只比较同仓 active 卡片。保存后会验证三份严格 Schema。", "muted"));
+  configuration.append(element("h2", "连接配置"), element("p", "Gate/Refiner 在 25 个完成回合或 compact 后提炼不超过 120 字的原子知识；每日整合检查合并、冲突和拆分。保存后会验证三份严格 Schema。", "muted"));
   const form = element("div", undefined, "form-grid");
   const base = inputWithValue(data.configuration?.base_url || "", "https://example.com/v1");
   const model = inputWithValue(data.configuration?.model || "", "Gate/Refiner 模型名称");
@@ -226,7 +226,7 @@ async function renderModel() {
   automation.append(
     element("h2", "自动抽取"),
     element("p", `模型验证：${data.strict_schema_verified ? "已通过" : "未通过"} · 当前状态：${data.auto_extract ? "已开启" : "已关闭"}`, "muted"),
-    element("p", "开启即代表同意在 25 回合或 compact 检查点发送最多 40,000/80,000 字符的安全对话投影给 Gate/Refiner，并允许每日只发送同仓 active 知识卡检查合并与冲突。Stop 只累计 turn 引用；对话原文不写入本地数据库或日志。", "muted"),
+    element("p", "开启即代表同意在 25 回合或 compact 检查点发送最多 40,000/80,000 字符的安全对话投影给 Gate/Refiner，并允许每日只发送同仓 active 知识卡检查合并、冲突与拆分。Stop 只累计 turn 引用；对话原文不写入本地数据库或日志。", "muted"),
   );
   const actions = element("div", undefined, "actions");
   const toggle = data.auto_extract

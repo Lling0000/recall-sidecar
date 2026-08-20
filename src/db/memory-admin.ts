@@ -81,18 +81,9 @@ export class MemoryAdminStore {
         this.writeTombstone(memoryId);
         return;
       }
-      const jobs = this.core.db
-        .prepare(
-          "SELECT refine_job_id FROM candidates WHERE applied_memory_id=? OR target_id=?",
-        )
-        .all(memoryId, memoryId) as unknown as Array<{ refine_job_id: string }>;
       this.writeTombstone(memoryId);
       this.core.db.prepare("DELETE FROM memory_fts WHERE memory_id=?").run(memoryId);
-      for (const job of jobs) {
-        this.core.db
-          .prepare("DELETE FROM refine_jobs WHERE id=?")
-          .run(job.refine_job_id);
-      }
+      this.purgeCandidateLinks(memoryId);
       this.core.db.prepare("DELETE FROM memories WHERE id=?").run(memoryId);
       this.core.bumpGeneration(memory.repo_id);
       this.core.audit("memory_hard_deleted", memoryId, {
@@ -110,16 +101,7 @@ export class MemoryAdminStore {
       for (const memory of memories) {
         this.writeTombstone(memory.id);
         this.core.db.prepare("DELETE FROM memory_fts WHERE memory_id=?").run(memory.id);
-        const jobs = this.core.db
-          .prepare(
-            "SELECT refine_job_id FROM candidates WHERE applied_memory_id=? OR target_id=?",
-          )
-          .all(memory.id, memory.id) as unknown as Array<{ refine_job_id: string }>;
-        for (const job of jobs) {
-          this.core.db
-            .prepare("DELETE FROM refine_jobs WHERE id=?")
-            .run(job.refine_job_id);
-        }
+        this.purgeCandidateLinks(memory.id);
       }
       this.core.db.prepare("DELETE FROM memories WHERE repo_id=?").run(repoId);
       this.core.bumpGeneration(repoId);
@@ -152,6 +134,30 @@ export class MemoryAdminStore {
         "INSERT OR REPLACE INTO deletion_tombstones(memory_id,deleted_at) VALUES (?,?)",
       )
       .run(memoryId, now());
+  }
+
+  private purgeCandidateLinks(memoryId: string): void {
+    const jobs = this.core.db
+      .prepare(
+        `SELECT DISTINCT refine_job_id FROM candidates
+         WHERE applied_memory_id=? OR target_id=?`,
+      )
+      .all(memoryId, memoryId) as unknown as Array<{ refine_job_id: string }>;
+    this.core.db
+      .prepare("DELETE FROM candidates WHERE applied_memory_id=? OR target_id=?")
+      .run(memoryId, memoryId);
+    for (const job of jobs) {
+      const remaining = row<{ count: number }>(
+        this.core.db
+          .prepare("SELECT count(*) AS count FROM candidates WHERE refine_job_id=?")
+          .get(job.refine_job_id),
+      );
+      if (Number(remaining?.count ?? 0) === 0) {
+        this.core.db
+          .prepare("DELETE FROM refine_jobs WHERE id=?")
+          .run(job.refine_job_id);
+      }
+    }
   }
 }
 

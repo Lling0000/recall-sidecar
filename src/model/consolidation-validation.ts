@@ -61,15 +61,17 @@ function validateSuggestion(
     "target_memory_id",
     "target_base_version",
     "related_memories",
-    "proposed_memory",
+    "proposed_memories",
     "reason",
   ]);
-  if (item.kind !== "merge" && item.kind !== "conflict") invalid();
+  if (item.kind !== "merge" && item.kind !== "conflict" && item.kind !== "split")
+    invalid();
   if (typeof item.target_memory_id !== "string") invalid();
   if (!Number.isInteger(item.target_base_version)) invalid();
-  if (!Array.isArray(item.related_memories) || item.related_memories.length === 0) {
+  if (!Array.isArray(item.related_memories) || item.related_memories.length > 8) {
     invalid();
   }
+  if (!Array.isArray(item.proposed_memories)) invalid();
   if (typeof item.reason !== "string" || !validLength(item.reason, 1, 300)) invalid();
   const target = active.get(item.target_memory_id);
   if (!target || target.version !== item.target_base_version) invalid();
@@ -79,27 +81,44 @@ function validateSuggestion(
   const relatedCards = related.map(
     (entry) => active.get(entry.memory_id) as CompareCard,
   );
-  if (relatedCards.some((card) => card.applicability !== target.applicability))
-    invalid();
-
-  let proposed: MemoryCard | null = null;
+  const proposed = item.proposed_memories.map((memory) => validateMemoryCard(memory));
   if (item.kind === "merge") {
-    proposed = validateMemoryCard(item.proposed_memory);
+    if (related.length === 0 || proposed.length !== 1) invalid();
     if (
       relatedCards.some((card) => card.kind !== target.kind) ||
-      proposed.kind !== target.kind ||
-      proposed.applicability !== target.applicability
+      relatedCards.some((card) => card.applicability !== target.applicability) ||
+      proposed[0]?.kind !== target.kind ||
+      proposed[0]?.applicability !== target.applicability
     ) {
       invalid();
     }
-  } else if (item.proposed_memory !== null) invalid();
+  } else if (item.kind === "conflict") {
+    if (
+      related.length === 0 ||
+      proposed.length !== 0 ||
+      relatedCards.some((card) => card.applicability !== target.applicability)
+    ) {
+      invalid();
+    }
+  } else {
+    if (
+      related.length !== 0 ||
+      proposed.length < 2 ||
+      proposed.length > 8 ||
+      proposed.some((memory) => memory.kind !== target.kind) ||
+      new Set(proposed.map((memory) => normalizedTitle(memory.title))).size !==
+        proposed.length
+    ) {
+      invalid();
+    }
+  }
 
   return {
     kind: item.kind,
     target_memory_id: target.id,
     target_base_version: target.version,
     related_memories: related,
-    proposed_memory: proposed,
+    proposed_memories: proposed,
     reason: item.reason,
   };
 }
@@ -156,6 +175,10 @@ function exactObject(value: unknown, keys: readonly string[]): Record<string, un
 function validLength(value: string, minimum: number, maximum: number): boolean {
   const length = Array.from(value).length;
   return length >= minimum && length <= maximum;
+}
+
+function normalizedTitle(value: string): string {
+  return value.normalize("NFKC").trim().toLocaleLowerCase();
 }
 
 function invalid(): never {

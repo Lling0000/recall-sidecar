@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { MODEL_SCHEMA_REVISION } from "../constants.js";
 import type { ConsolidationSuggestion } from "../model/consolidation-types.js";
 import { validateMemoryCard } from "../security/memory-card.js";
 import type { CompareCard } from "../types.js";
@@ -18,14 +19,19 @@ export class KnowledgeConsolidationStore {
     const repositories = this.core.db
       .prepare(
         `SELECT r.id FROM repositories r JOIN memories m ON m.repo_id=r.id
-         WHERE m.state='active' GROUP BY r.id HAVING count(*)>=2`,
+         WHERE m.state='active' GROUP BY r.id HAVING count(*)>=1`,
       )
       .all() as unknown as Array<{ id: string }>;
     let count = 0;
     for (const repository of repositories) {
       const last = this.core.getSetting(lastRunKey(repository.id));
+      const revision = this.core.getSetting(lastRevisionKey(repository.id));
       const lastTime = last ? Date.parse(last) : Number.NaN;
-      if (Number.isFinite(lastTime) && this.clock().getTime() - lastTime < DAY_MS) {
+      if (
+        revision === MODEL_SCHEMA_REVISION &&
+        Number.isFinite(lastTime) &&
+        this.clock().getTime() - lastTime < DAY_MS
+      ) {
         continue;
       }
       if (this.enqueue(repository.id)) count += 1;
@@ -42,7 +48,7 @@ export class KnowledgeConsolidationStore {
           )
           .get(repoId),
       );
-      if (Number(eligible?.count ?? 0) < 2) return null;
+      if (Number(eligible?.count ?? 0) < 1) return null;
       const existing = row<{ id: string }>(
         this.core.db
           .prepare(
@@ -107,9 +113,9 @@ export class KnowledgeConsolidationStore {
       const job = this.runningJob(jobId);
       const timestamp = this.timestamp();
       for (const suggestion of suggestions) {
-        const proposed = suggestion.proposed_memory
-          ? JSON.stringify(validateMemoryCard(suggestion.proposed_memory))
-          : null;
+        const proposed = JSON.stringify(
+          suggestion.proposed_memories.map((memory) => validateMemoryCard(memory)),
+        );
         this.core.db
           .prepare(
             `INSERT OR IGNORE INTO knowledge_consolidation_suggestions(
@@ -203,11 +209,11 @@ export class KnowledgeConsolidationStore {
   }
 
   private putLastRun(repoId: string, timestamp: string): void {
-    this.core.db
-      .prepare(
-        "INSERT INTO settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-      )
-      .run(lastRunKey(repoId), timestamp);
+    const put = this.core.db.prepare(
+      "INSERT INTO settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+    );
+    put.run(lastRunKey(repoId), timestamp);
+    put.run(lastRevisionKey(repoId), MODEL_SCHEMA_REVISION);
   }
 
   private timestamp(): string {
@@ -230,4 +236,8 @@ function fingerprint(suggestion: ConsolidationSuggestion): string {
 
 function lastRunKey(repoId: string): string {
   return `last_consolidation_at:${repoId}`;
+}
+
+function lastRevisionKey(repoId: string): string {
+  return `last_consolidation_revision:${repoId}`;
 }

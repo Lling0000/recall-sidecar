@@ -50,8 +50,8 @@ export class ModelManager {
         turns: [
           {
             turn_id: "connection-test-turn",
-            user_prompt: "This is a one-off connection test.",
-            final_answer: "Connection test acknowledged.",
+            user_prompt: "本项目确认：超时起点首次写入后，重复消息不得重置。",
+            final_answer: "该约束已写入方案并通过验证。",
           },
         ],
         eligible_turn_ids: ["connection-test-turn"],

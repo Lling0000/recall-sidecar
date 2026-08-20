@@ -116,6 +116,9 @@ h3 { margin: 0; font-size: 15px; font-weight: 600; }
 .compare > div + div { border-left: 1px solid var(--line); }
 .compare h3 { margin-bottom: 18px; }
 .review-reason { margin: 0; padding: 18px 0 0; border-top: 1px solid var(--line); }
+.evidence-details { margin-top: 16px; color: var(--muted); }
+.evidence-details summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+.evidence-details[open] summary { margin-bottom: 10px; }
 .field { color: #33332f; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
 .field strong { display: block; margin-bottom: 5px; color: var(--muted); font-size: 11px; font-weight: 500; letter-spacing: .05em; }
 

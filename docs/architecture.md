@@ -17,7 +17,7 @@ Browser 127.0.0.1 ─ secure dashboard ────────┘
 - `src/repo`：只读解析 `.git`、`gitdir`、`commondir`，不执行 Git。
 - `src/db`：schema、连接、仓库/session、turn 引用队列、25+5 overlap 检查点、最终 Apply、查询和管理按职责拆分。
 - `src/model/session-*`：25 回合/compact Gate＋Refiner 的提示词、strict Schema、输入裁剪、验证和模型传输。
-- `src/model/consolidation-*`、`src/db/consolidation-*`：同仓 active 知识的严格 merge/conflict 建议、待核对和确认事务。
+- `src/model/consolidation-*`、`src/db/consolidation-*`：同仓 active 知识的严格 merge/conflict/split 建议、待核对和确认事务。
 - `src/rollout`：按必需事件结构投影兼容 CLI 版本的允许字段。
 - `src/hooks`、`src/sidecar`：有截止时间的 NDJSON IPC 与 fail-open Hook。
 - `src/model`、`src/jobs`：正式 strict Schema transport 和后台抽取。

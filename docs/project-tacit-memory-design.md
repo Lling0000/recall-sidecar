@@ -1,7 +1,7 @@
 # 项目隐性知识检查点设计
 
 状态：首版产品事实补充  
-日期：2026-08-19
+日期：2026-08-20
 
 ## 1. 目标
 
@@ -15,6 +15,8 @@
 不保存个人偏好、通用流程、一次性要求、当前进度、目录清单、普通代码摘要或无证据推测。本系统不是项目文档索引，也不做 Skill、Prompt 或 Subagent 自修改。
 
 活跃知识数量不是优化指标。新经验可以继续增加知识；整合只消除有把握的重复，不追求卡片单调减少。一个健康仓库的 active 集合应当是增减并存、信息密度逐渐提高，而不是越少越好。
+
+知识卡必须原子化：一张卡只表达一个未来可复用的决策、约束、坑或结论。不能为了减少 edit 数量把独立规则塞进同一张卡；同一来源 turn 可以支持多张互不重复的原子卡，整个 Refiner 响应仍最多 8 个 edit。
 
 ## 2. 三个 Hook 的职责
 
@@ -93,7 +95,7 @@ Gate 使用配置的高质量模型和严格 Structured Output，只回答：
 
 Gate 通过后，同一高质量模型运行 Refiner。输入为同一安全上下文、Gate 选中的 turn 和当前 active 知识。
 
-Refiner 输出最多 8 个 create/update edit：
+Refiner 输出最多 8 个原子 create/update edit。同一个 `source_turn_id` 可以重复出现，但同一 active memory target 在一批中最多 update 一次：
 
 ```json
 {
@@ -115,14 +117,14 @@ Refiner 输出最多 8 个 create/update edit：
 }
 ```
 
-`update` 必须引用输入 active 知识的精确 ID/version。Refiner 不允许自动硬删除；过期或不再适用的知识由看板人工归档或删除。
+`update` 必须引用输入 active 知识的精确 ID/version。Refiner 不允许自动硬删除；过期或不再适用的知识由看板人工归档或删除。`knowledge` 应为一到两句完整结论，不得列举多个可以独立召回的规则；证据放入 `rationale`，不能重复改写 `knowledge`。
 
 ## 6. 项目知识 Schema
 
 ```text
 kind          decision | invariant | pitfall | lesson
 title         1～40 字
-knowledge     1～240 字
+knowledge     1～120 字
 rationale     1～200 字
 applicability 0～80 字
 ```
@@ -137,6 +139,8 @@ applicability 0～80 字
 
 `rationale` 用于看板核对和后续 Refiner 对照，默认不注入 UserPromptSubmit。
 
+短注入规则：任何版本写入模型的新卡都必须满足 `knowledge ≤120`。历史已落盘的 `knowledge ≤240` 卡仍可读取、回滚和整合，但 UserPromptSubmit 最多注入 120 字（超出时最后一字为省略号），直到它被 Refiner 更新或经人工确认的 `split` 建议拆分。看板默认折叠 `rationale`，用户展开时才查看完整结构化证据。
+
 ## 7. Apply 与失败
 
 Refiner edit 在一个 `BEGIN IMMEDIATE` 事务中：
@@ -148,6 +152,10 @@ Refiner edit 在一个 `BEGIN IMMEDIATE` 事务中：
 5. 整批提交。
 
 任一步失败整批回滚。Gate/Refiner 失败或 stale 时，新 turn 保持 pending，后续检查点重新处理；现有 active 知识不变。最终 create/update 都进入待核对，但 Apply 后立即参与召回。
+
+同一 turn 的多张候选通过 `(refine_job_id, edit_ordinal)` 隔离。硬删除其中一张只删除该卡候选；共享 refine job 只有在不再被同 turn 其他候选引用时才清理。
+
+候选表迁移保留旧版 `skipped|failed` 行作为只读审计兼容；新架构只写 `applied|stale`。
 
 健康页的 `failed_session_refines` 只统计仍含 pending eligible turn 的未解决失败；若后续检查点已处理完同一批 turn，旧失败只保留在 job/audit 历史中，不继续显示为当前故障。
 
@@ -176,14 +184,19 @@ rollout 只按兼容的必需事件结构投影：
 
 ## 10. 定时知识整合
 
-Sidecar 常驻进程每 24 小时为 active 知识数量不少于 2 的 repo 调度一次整合检查，不安装额外 cron 或第二个 launchd job。使用持久化的 `last_consolidation_at:<repo_id>` 防止进程重启后重复执行。
+Sidecar 常驻进程每 24 小时为 active 知识数量不少于 1 的 repo 调度一次整合检查，不安装额外 cron 或第二个 launchd job。使用持久化的 `last_consolidation_at:<repo_id>` 防止进程重启后重复执行。单卡也要检查，因为它可能包含多个应拆分的独立结论。
+
+同时保存 `last_consolidation_revision:<repo_id>`。MODEL_SCHEMA_REVISION 变化后，旧时间戳不阻挡新规则的一次立即检查；新 revision 首次完成或失败后再恢复 24 小时周期。
 
 整合只在 `auto_extract` 已开启且模型的整合 strict Schema 已通过连接测试时运行。连接测试分别标记 `gate_*`、`refiner_*`、`consolidation_*` 失败阶段，任一失败都保持关闭。模型只读取同仓 active 项目知识卡，不读取原始对话、rollout 或来源会话。一次输入最多 80,000 字符；超过上限时整次安全跳过并报告 `consolidation_input_too_large`，首版不做可能漏掉跨批关系的局部自动整合。
+
+Gate、Refiner 或 consolidation 的 strict Schema 发生变化时必须提升 `MODEL_SCHEMA_REVISION`。Sidecar 启动发现已验证 revision 不匹配时自动把 `strict_schema_verified` 和 `auto_extract` 关闭，三份正式 Schema 重新测试全部通过后才能恢复。
 
 严格输出最多 8 条建议：
 
 - `merge`：两个或多个知识实质重复、部分重叠或应合成一个更完整主题；
 - `conflict`：知识在相同适用范围内互相矛盾，无法仅凭现有卡片安全决定；
+- `split`：一张知识卡包含两个或多个可独立召回的结论，建议拆成 2～8 张原子卡；
 - 无建议：保持不变。
 
 `merge` 必须同时满足：
@@ -196,7 +209,9 @@ Sidecar 常驻进程每 24 小时为 active 知识数量不少于 2 的 repo 调
 
 任一条件无法确认就不建议 `merge`。相同主题但结论互斥时只能输出 `conflict`；类型不同、适用范围不同或只是关键词相似时保持不变。
 
-模型建议包含目标 knowledge ID/base_version、相关 knowledge ID/version、建议后的完整知识卡和判断原因；Sidecar 再按参与卡的排序后 ID/version 计算稳定指纹。建议进入「待核对」，不自动改变召回结果。同一组版本已经存在 pending 或 ignored 建议时不重复创建；任一参与卡版本变化后才允许重新建议。
+`split` 只能引用一张 target，不得带 related memory；建议的 2～8 张卡必须与原卡 `kind` 一致、每张 `knowledge ≤120`、主题互相独立，并合起来保留原卡全部非重复知识和关键依据。模型不得用 split 改变事实、扩大适用范围或把缺少证据的推测补进来。
+
+模型建议包含目标 knowledge ID/base_version、相关 knowledge ID/version、`proposed_memories` 完整知识卡数组和判断原因；Sidecar 再按类型及参与卡 ID/version 计算稳定指纹。`merge` 数组恰好 1 张，`conflict` 为空，`split` 为 2～8 张。建议进入「待核对」，不自动改变召回结果。同一组版本已经存在 pending 或 ignored 建议时不重复创建；任一参与卡版本变化后才允许重新建议。
 
 用户确认 `merge` 后在一个事务中：
 
@@ -206,11 +221,21 @@ Sidecar 常驻进程每 24 小时为 active 知识数量不少于 2 的 repo 调
 4. 更新 FTS、generation 与 audit；
 5. 标记建议 applied。
 
-`conflict` 只展示对照，不自动选择胜者；用户可以忽略建议，或等待后续项目证据由检查点 Refiner 更新。首版不提供手工改写建议正文。
+用户确认 `split` 后在一个事务中：
+
+1. 重读 target 的 repo、active version 与 tombstone；
+2. 用 `proposed_memories[0]` 为原 memory 创建新 version；
+3. 用其余 proposed cards 创建新的 active memories/version 1；
+4. 校验同仓 topic 唯一性，更新全部 FTS、generation 与 audit；
+5. 标记建议 applied。
+
+任一目标过期、topic 冲突或卡片校验失败时整条 split 变为 stale，整体不生效。原卡全部历史版本与来源始终保留。
+
+`conflict` 只展示对照，不自动选择胜者；用户可以忽略建议，或等待后续项目证据由检查点 Refiner 更新。merge/split 建议正文都不能手工改写，只能确认或忽略。
 
 自动禁止硬删除 knowledge、memory_versions、来源引用或 tombstone。整合失败只记录错误码和时间，不影响 Hook、召回或下一次检查点；错误审计永久保留，失败 job 元数据可在三份 strict Schema 后续全部复测成功时清理，避免已解决告警永久占据健康页。
 
-因此 active 数量不是单向变化：新检查点可能增加卡片，明确更新通常保持数量，确认合并会减少 active 数量，冲突和忽略不会改变数量。历史版本与被归档卡仍保留，不计入 active 召回。
+因此 active 数量不是单向变化：新检查点和确认 split 可能增加卡片，明确更新通常保持数量，确认 merge 会减少 active 数量，conflict 和忽略不会改变数量。历史版本与被归档卡仍保留，不计入 active 召回。
 
 ## 11. 验收重点
 
@@ -220,8 +245,10 @@ Sidecar 常驻进程每 24 小时为 active 知识数量不少于 2 的 repo 调
 - 超过字符边界的未读 turn 不得被标记 processed；
 - Gate false 不产生知识；
 - Refiner create/update 经事务后才可召回；
+- 同一 eligible turn 可产生多张原子卡，但整个响应最多 8 张、同一 update target 最多一次；
+- 新卡 knowledge 不超过 120 字；旧长卡仍可读，但召回只注入 120 字；
 - 同 repo 多 session 的最终知识共享，但检查点计数按 session 隔离；
 - DB/日志/备份无 Prompt 和最终回答原文。
 - 未测试但结构兼容的 CLI 版本正常投影；结构不兼容时安全跳过并告警。
-- 每日整合幂等；建议不自动改变召回；确认 merge 后主卡版本化、相关卡只归档不硬删除。
+- 每日整合幂等；建议不自动改变召回；确认 merge 后主卡版本化、相关卡只归档不硬删除；确认 split 后原卡升版并原子创建其余卡。
 - 整合不得以减少数量为目标；类型、适用范围或结论不一致时不能合并，冲突不能自动裁决。

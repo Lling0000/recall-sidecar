@@ -1,3 +1,4 @@
+import { MODEL_SCHEMA_REVISION } from "../constants.js";
 import type { ModelConfiguration } from "../model/types.js";
 import type { DatabaseCore } from "./core.js";
 import { now, row } from "./helpers.js";
@@ -21,6 +22,7 @@ export class ModelSettingsStore {
       this.put("consent_origin", "");
       this.put("verified_model_origin", "");
       this.put("verified_model_name", "");
+      this.put("verified_schema_revision", "");
       this.core.db
         .prepare(
           `DELETE FROM settings WHERE key IN (
@@ -36,6 +38,7 @@ export class ModelSettingsStore {
       this.put("strict_schema_verified", "true");
       this.put("verified_model_origin", origin);
       this.put("verified_model_name", model);
+      this.put("verified_schema_revision", MODEL_SCHEMA_REVISION);
       this.put("schema_verified_at", now());
     });
   }
@@ -46,6 +49,7 @@ export class ModelSettingsStore {
         this.value("strict_schema_verified") !== "true" ||
         this.value("verified_model_origin") !== origin ||
         this.value("verified_model_name") !== model ||
+        this.value("verified_schema_revision") !== MODEL_SCHEMA_REVISION ||
         this.value("consent_origin") !== origin ||
         this.value("prompt_consent") !== "true" ||
         this.value("final_answer_consent") !== "true"

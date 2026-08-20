@@ -276,6 +276,27 @@ test("model configuration reuses Keychain and clears legacy usage settings", asy
   }
 });
 
+test("a changed strict Schema revision disables extraction until reverified", async () => {
+  const root = await mkdtemp(join(tmpdir(), "clm-schema-revision-"));
+  const path = join(root, "memory.sqlite");
+  const database = new MemoryDatabase(path);
+  enableExtraction(database);
+  database.setSetting("verified_schema_revision", "old-schema");
+  database.setSetting("auto_extract", "true");
+  database.setSetting("strict_schema_verified", "true");
+  assert.equal(database.extractionEnabled(), false);
+  database.close();
+
+  const reopened = new MemoryDatabase(path);
+  try {
+    assert.equal(reopened.getSetting("auto_extract"), "false");
+    assert.equal(reopened.getSetting("strict_schema_verified"), "false");
+    assert.equal(reopened.extractionEnabled(), false);
+  } finally {
+    reopened.close();
+  }
+});
+
 test("single automatic knowledge switch bundles consent and can turn it off", async () => {
   const root = await mkdtemp(join(tmpdir(), "clm-manager-"));
   const database = new MemoryDatabase(join(root, "memory.sqlite"));

@@ -1,4 +1,4 @@
-import { validateMemoryCard } from "../security/memory-card.js";
+import { validateStoredMemoryCard } from "../security/memory-card.js";
 import type { MemoryCard, RepoIdentity } from "../types.js";
 import type { RepositoryRow } from "./types.js";
 
@@ -15,7 +15,7 @@ export function topicKey(title: string): string {
 }
 
 export function parseCard(content: string): MemoryCard {
-  return validateMemoryCard(JSON.parse(content));
+  return validateStoredMemoryCard(JSON.parse(content));
 }
 
 export function identityFromRow(value: RepositoryRow): RepoIdentity {

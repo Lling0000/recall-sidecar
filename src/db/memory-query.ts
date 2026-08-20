@@ -1,5 +1,10 @@
 import { existsSync } from "node:fs";
-import { RECALL_LIMIT, RECALL_MAX_CHARS, RECALL_NOTICE } from "../constants.js";
+import {
+  RECALL_KNOWLEDGE_MAX_CHARS,
+  RECALL_LIMIT,
+  RECALL_MAX_CHARS,
+  RECALL_NOTICE,
+} from "../constants.js";
 import type { CompareCard } from "../types.js";
 import type { DatabaseCore } from "./core.js";
 import { parseCard, row } from "./helpers.js";
@@ -40,7 +45,8 @@ export class MemoryQueryStore {
     const lines = [RECALL_NOTICE];
     for (const card of cards) {
       const applicability = card.applicability ? `（${card.applicability}）` : "";
-      const next = `[${card.kind}] ${card.title}：${card.knowledge}${applicability}`;
+      const knowledge = compactKnowledge(card.knowledge);
+      const next = `[${card.kind}] ${card.title}：${knowledge}${applicability}`;
       if ([...lines, next].join("\n").length > RECALL_MAX_CHARS) break;
       lines.push(next);
     }
@@ -215,4 +221,13 @@ interface ReviewRow {
   new_content: string;
   native_session_ref: string | null;
   native_turn_ref: string | null;
+}
+
+function compactKnowledge(value: string): string {
+  const characters = Array.from(value);
+  if (characters.length <= RECALL_KNOWLEDGE_MAX_CHARS) return value;
+  return `${characters
+    .slice(0, RECALL_KNOWLEDGE_MAX_CHARS - 1)
+    .join("")
+    .trimEnd()}…`;
 }

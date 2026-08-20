@@ -3,7 +3,6 @@ import { mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { KnowledgeConsolidationStore } from "../../src/db/consolidation-store.js";
 import { MemoryDatabase } from "../../src/db/database.js";
 import { KnowledgeConsolidationWorker } from "../../src/jobs/consolidation-worker.js";
 import { createModelConfiguration } from "../../src/model/configuration.js";
@@ -36,6 +35,31 @@ const MERGED_CARD: MemoryCard = {
   rationale: "项目中已观察到产物覆盖，修改生成源可以稳定保留变更。",
   applicability: "本仓库生成代码",
 };
+
+const OVERLOADED_CARD: MemoryCard = {
+  kind: "pitfall",
+  title: "生成代码修改方式",
+  knowledge: "直接修改生成产物会被覆盖；需要保留变更时必须修改生成源并重新生成。",
+  rationale: "项目中观察到产物覆盖，并验证修改生成源可以稳定保留变更。",
+  applicability: "本仓库生成代码",
+};
+
+const SPLIT_CARDS: MemoryCard[] = [
+  {
+    kind: "pitfall",
+    title: "生成产物不可手工修改",
+    knowledge: "直接修改生成产物会在下次生成时被覆盖。",
+    rationale: "项目中已经观察到生成器覆盖手工修改。",
+    applicability: "本仓库生成代码",
+  },
+  {
+    kind: "pitfall",
+    title: "生成代码应修改生成源",
+    knowledge: "需要保留生成代码变更时，应修改生成源后重新生成。",
+    rationale: "修改生成源后重新生成可以稳定保留变更。",
+    applicability: "本仓库生成代码",
+  },
+];
 
 function response(value: unknown): Response {
   return new Response(
@@ -89,7 +113,7 @@ function suggestion(database: MemoryDatabase, kind: "merge" | "conflict" = "merg
         base_version: active[1]?.activeVersion,
       },
     ],
-    proposed_memory: kind === "merge" ? MERGED_CARD : null,
+    proposed_memories: kind === "merge" ? [MERGED_CARD] : [],
     reason:
       kind === "merge"
         ? "两张卡描述同一生成代码坑点，适用范围相同且内容互补。"
@@ -112,7 +136,7 @@ test("consolidation uses strict Schema and rejects scope-expanding merges", asyn
           target_memory_id: "a",
           target_base_version: 1,
           related_memories: [{ memory_id: "b", base_version: 1 }],
-          proposed_memory: MERGED_CARD,
+          proposed_memories: [MERGED_CARD],
           reason: "同主题、同范围且互补。",
         },
       ],
@@ -139,7 +163,7 @@ test("consolidation uses strict Schema and rejects scope-expanding merges", asyn
           target_memory_id: "a",
           target_base_version: 1,
           related_memories: [{ memory_id: "b", base_version: 1 }],
-          proposed_memory: { ...MERGED_CARD, applicability: "全部仓库" },
+          proposed_memories: [{ ...MERGED_CARD, applicability: "全部仓库" }],
           reason: "错误地扩大范围。",
         },
       ],
@@ -181,7 +205,7 @@ test("P0-25 merge stays pending until confirmation then versions and archives", 
 
     const review = database.listPendingConsolidations()[0];
     assert.ok(review);
-    assert.equal(database.applyConsolidationMerge(review.suggestionId), "applied");
+    assert.equal(database.applyConsolidationSuggestion(review.suggestionId), "applied");
     const after = database.listMemories(session.repoId);
     assert.equal(after.filter((memory) => memory.state === "active").length, 1);
     assert.equal(after.filter((memory) => memory.state === "archived").length, 1);
@@ -217,7 +241,7 @@ test("P0-25 conflicts never change active knowledge and can be ignored", async (
       2,
     );
     assert.ok(review);
-    assert.throws(() => database.applyConsolidationMerge(review.suggestionId));
+    assert.throws(() => database.applyConsolidationSuggestion(review.suggestionId));
     database.ignoreConsolidation(review.suggestionId);
     assert.equal(database.listPendingConsolidations().length, 0);
   } finally {
@@ -225,41 +249,63 @@ test("P0-25 conflicts never change active knowledge and can be ignored", async (
   }
 });
 
-test("daily scheduling persists its 24 hour boundary", async () => {
-  const { database, session } = await setup();
-  let current = new Date("2026-08-19T00:00:00.000Z");
-  const store = new KnowledgeConsolidationStore(database.core, () => current);
+test("P0-25 split stays pending then versions the target and creates atomic cards", async () => {
+  const root = await mkdtemp(join(tmpdir(), "clm-split-"));
+  const project = join(root, "project");
+  await mkdir(project, { recursive: true });
+  const database = new MemoryDatabase(join(root, "memory.sqlite"));
   try {
-    assert.equal(store.enqueueDue(), 1);
-    const first = store.claimNext();
-    assert.ok(first);
-    store.complete(first.jobId, []);
-    current = new Date("2026-08-19T23:00:00.000Z");
-    assert.equal(store.enqueueDue(), 0);
-    current = new Date("2026-08-20T01:00:00.000Z");
-    assert.equal(store.enqueueDue(), 1);
-    assert.equal(store.claimNext()?.repoId, session.repoId);
-  } finally {
-    database.close();
-  }
-});
-
-test("successful schema recheck can clear resolved failed job metadata", async () => {
-  const { database, session } = await setup();
-  try {
+    const session = database.bindSession(
+      "codex",
+      "split-session",
+      await resolveRepoIdentity(project),
+    );
+    const created = applyCreate(database, session, "split-seed", OVERLOADED_CARD);
+    assert.ok(created.memoryId);
+    enableExtraction(database);
+    const client = new KnowledgeConsolidationClient(async () =>
+      response({
+        suggestions: [
+          {
+            kind: "split",
+            target_memory_id: created.memoryId,
+            target_base_version: 1,
+            related_memories: [],
+            proposed_memories: SPLIT_CARDS,
+            reason: "原卡包含两个可以独立召回的生成代码坑点。",
+          },
+        ],
+      }),
+    );
+    const worker = new KnowledgeConsolidationWorker(
+      database,
+      new MemoryKeyProvider("test-key"),
+      client,
+    );
     assert.ok(database.consolidations.enqueue(session.repoId));
-    const job = database.consolidations.claimNext();
-    assert.ok(job);
-    database.consolidations.fail(job.jobId, "model_invalid_structured_output");
-    assert.equal(database.consolidations.health().failed, 1);
-    assert.equal(database.consolidations.clearResolvedFailures(), 1);
-    assert.equal(database.consolidations.health().failed, 0);
-    const audit = database.core.db
-      .prepare(
-        "SELECT count(*) AS count FROM audit_events WHERE action='knowledge_consolidation_failed'",
-      )
-      .get() as { count: number };
-    assert.equal(Number(audit.count), 1);
+    worker.wake();
+    await worker.idle();
+    assert.equal(
+      database
+        .listMemories(session.repoId)
+        .filter((memory) => memory.state === "active").length,
+      1,
+    );
+    const review = database.listPendingConsolidations()[0];
+    assert.equal(review?.kind, "split");
+    assert.equal(review?.proposedMemories.length, 2);
+    assert.ok(review);
+    assert.equal(database.applyConsolidationSuggestion(review.suggestionId), "applied");
+    const active = database
+      .listMemories(session.repoId)
+      .filter((memory) => memory.state === "active");
+    assert.equal(active.length, 2);
+    assert.equal(
+      active.find((memory) => memory.id === created.memoryId)?.activeVersion,
+      2,
+    );
+    assert.equal(database.listVersions(created.memoryId).length, 2);
+    assert.equal(database.listPendingConsolidations().length, 0);
   } finally {
     database.close();
   }

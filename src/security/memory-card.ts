@@ -1,6 +1,8 @@
 import type { MemoryCard } from "../types.js";
 
 const CARD_KEYS = ["kind", "title", "knowledge", "rationale", "applicability"] as const;
+const NEW_KNOWLEDGE_MAX_CHARS = 120;
+const STORED_KNOWLEDGE_MAX_CHARS = 240;
 
 const FORBIDDEN_CONTENT = [
   /```/u,
@@ -20,6 +22,14 @@ function characterLength(value: string): number {
 }
 
 export function validateMemoryCard(value: unknown): MemoryCard {
+  return validateCard(value, NEW_KNOWLEDGE_MAX_CHARS);
+}
+
+export function validateStoredMemoryCard(value: unknown): MemoryCard {
+  return validateCard(value, STORED_KNOWLEDGE_MAX_CHARS);
+}
+
+function validateCard(value: unknown, knowledgeMaxChars: number): MemoryCard {
   if (!isObject(value)) throw new Error("memory_not_object");
   const keys = Object.keys(value).sort();
   const expectedKeys = [...CARD_KEYS].sort();
@@ -41,7 +51,10 @@ export function validateMemoryCard(value: unknown): MemoryCard {
   if (!new Set(["decision", "invariant", "pitfall", "lesson"]).has(card.kind)) {
     throw new Error("memory_kind_value");
   }
-  if (characterLength(card.knowledge) < 1 || characterLength(card.knowledge) > 240) {
+  if (
+    characterLength(card.knowledge) < 1 ||
+    characterLength(card.knowledge) > knowledgeMaxChars
+  ) {
     throw new Error("memory_knowledge_length");
   }
   if (characterLength(card.rationale) < 1 || characterLength(card.rationale) > 200) {

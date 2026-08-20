@@ -47,8 +47,8 @@ Sidecar（唯一写入者）
 | SAFE-01 | 记忆是数据，不是指令。 | 注入文本不直接触发命令或工具。 |
 | REL-01 | Hook/模型/DB 故障不能阻断 Codex。 | 故障时 Codex 继续。 |
 | REL-02 | SQLite 事务提交后才报告“已采集”。 | 崩溃重试不重复生效。 |
-| MODEL-01 | `auto_extract` 只允许在连接测试验证模型支持严格 `json_schema` 后打开；不得回退自由文本或 JSON mode。 | 不支持严格 Schema 的模型保持关闭且健康页说明原因。 |
-| MEM-06 | 每 24 小时只为同仓 active 知识生成无损 `merge|conflict` 待核对建议；不以减少数量为目标，不自动改召回、不自动裁决冲突、不硬删除。 | 建议前后召回不变；确认 merge 后主卡产生新版本、相关卡归档且历史保留。 |
+| MODEL-01 | `auto_extract` 只允许在连接测试验证模型支持当前 revision 的三份严格 `json_schema` 后打开；Schema revision 变化使旧验证失效，不得回退自由文本或 JSON mode。 | 不支持严格 Schema 或升级后未复测的模型保持关闭且健康页说明原因。 |
+| MEM-06 | 每 24 小时只为同仓 active 知识生成无损 `merge|conflict|split` 待核对建议；不以减少数量为目标，不自动改召回、不自动裁决冲突、不硬删除。 | 建议前后召回不变；确认 merge 后主卡产生新版本、相关卡归档；确认 split 后原卡升版并创建其余原子卡，历史全部保留。 |
 
 ## 3. 三个 Hook 与写回
 
@@ -172,13 +172,13 @@ Stop 发出终态信号
 → 检查点一次读取 rollout，只投影每个 turn 的用户 Prompt + final answer
 → Gate 读取最多 40,000 字符；overlap 只作上下文，selected 只能来自新 turn
 → Gate 通过后，Refiner 读取最多 80,000 字符和同仓 active 知识
-→ Refiner 输出最多 8 个 create/update edit
+→ Refiner 输出最多 8 个原子 create/update edit；同一 source turn 可重复，update target 不可重复
 → 严格 Schema + repo/base_version/tombstone/source turn 校验
 → BEGIN IMMEDIATE 原子 Apply，create/update 都进入待核对并开始召回
 → 只把 Gate 实际看过的新 turn 标为 processed；未进入字符窗口的 turn 保持 pending
 ```
 
-Gate 只返回 `should_refine + selected_turn_ids[≤8]`，selected 必须属于本批 eligible turn，不能来自 overlap。Refiner 只允许 create/update，并只能修改输入中提供的同仓 active ID/version。无模型时只保留 pending turn；看板不允许手工创建或编辑正文，只能确认、回滚、归档和硬删除。
+Gate 只返回 `should_refine + selected_turn_ids[≤8]`，selected 必须属于本批 eligible turn，不能来自 overlap。Refiner 只允许 create/update，并只能修改输入中提供的同仓 active ID/version。一张卡只表达一个可独立召回的结论，knowledge 最多 120 字；同一 source turn 可支持多张原子卡，但同一 active target 每批最多 update 一次。无模型时只保留 pending turn；看板不允许手工创建或编辑正文，只能确认、回滚、归档和硬删除。
 
 Refiner Apply 执行一个 `BEGIN IMMEDIATE`：重读批次内全部目标并比较 `base_version`、检查 repo/tombstone/source turn、写 memory version、切换 active version、更新 FTS、写 audit 和 `review_state=unverified`、递增仓库 generation 后提交。任一步失败整批回滚。模型调用期间不持有 DB 事务。若 `base_version` 已过期，整批不生效并记录失败，下一检查点重新读取当前状态；人工回滚、归档或删除不得被旧 Refiner 结果覆盖。
 
@@ -256,14 +256,14 @@ Gate 与 Refiner 必须分别使用严格 Structured Output。项目知识卡 Sc
   "properties": {
     "kind": { "enum": ["decision", "invariant", "pitfall", "lesson"] },
     "title": { "type": "string", "minLength": 1, "maxLength": 40 },
-    "knowledge": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "knowledge": { "type": "string", "minLength": 1, "maxLength": 120 },
     "rationale": { "type": "string", "minLength": 1, "maxLength": 200 },
     "applicability": { "type": "string", "maxLength": 80 }
   }
 }
 ```
 
-Gate Schema 固定为 `{ should_refine, selected_turn_ids[≤8] }`；false 时数组为空，selected 只能来自 eligible 新 turn。Refiner edit 固定为 create/update + source_turn_id + target/base + memory；update 必须命中输入 active ID/version。额外字段、超限、角色标记、工具 JSON、代码块或链接使整个响应失败。
+Gate Schema 固定为 `{ should_refine, selected_turn_ids[≤8] }`；false 时数组为空，selected 只能来自 eligible 新 turn。Refiner edit 固定为 create/update + source_turn_id + target/base + memory；同一 source_turn_id 可重复，update 必须命中输入 active ID/version 且 target 不可重复。额外字段、超限、角色标记、工具 JSON、代码块或链接使整个响应失败。
 
 **召回注入不是硬规则，是把卡片渲染成几行给人读的数据。** 「应该 / 不要」只是卡片的一种排版，Codex 没有义务按这个格式行事。第一性原理：下一轮真正需要的是「以后怎么做」；否定句堆在 Prompt 里更像指令，和 SAFE-01（记忆是数据）打架。
 
@@ -274,7 +274,7 @@ Gate Schema 固定为 `{ should_refine, selected_turn_ids[≤8] }`；false 时�
 [pitfall] 生成文件不可直接修改：直接修改会在重新生成时被覆盖，应修改生成源。（本仓库生成代码）
 ```
 
-也就是 `kind + title + knowledge + 可选 applicability`。`rationale` 留在库里给看板核对和 Refiner 对照，默认不注入。禁止把 JSON、角色标记、工具协议灌进 Prompt。
+也就是 `kind + title + knowledge + 可选 applicability`。每条 knowledge 最多注入 120 字；历史长卡超出时加省略号。`rationale` 留在库里给看板核对和 Refiner 对照，默认不注入并在看板折叠显示。禁止把 JSON、角色标记、工具协议灌进 Prompt。
 
 知识卡是 **Refiner 的 Structured Output**，不是人填的。看板不提供创建或编辑正文入口。Sidecar 校验后按 `repo_id` 写入 `memory_versions.content` 并更新 FTS。同一 `repo_id` 一条主题只一条 active。
 
@@ -391,7 +391,7 @@ refine_jobs(id, turn_id, state, attempts, next_attempt_at, lease_expires_at, las
 session_turn_queue(turn_id, session_id, repo_id, refine_job_id, state, captured_at, processed_at)
 session_refine_jobs(id, session_id, repo_id, trigger, state, attempts, last_error, created_at, updated_at)
 session_refine_job_turns(job_id, turn_id, role, ordinal)
-candidates(id, refine_job_id, repo_id, action, target_id, base_version, revision, content, state, review_state)
+candidates(id, refine_job_id, edit_ordinal, repo_id, action, target_id, base_version, revision, content, state, review_state)
 memories(id, repo_id, active_version_id, state)
 memory_versions(id, memory_id, version_no, content, source_session_id, source_turn_ref, restores_version_id)
 memory_fts(memory_id, repo_id, searchable_text)
@@ -402,9 +402,9 @@ audit_events(id, action, target_id, metadata, created_at)
 settings(key, value)
 ```
 
-唯一约束：`sessions(client,native_session_ref)`、`turns(session_id,native_turn_ref)`、`refine_jobs(turn_id)`、`session_turn_queue(turn_id)`、`session_refine_job_turns(job_id,turn_id)`、`candidates(refine_job_id)`、`memory_versions(memory_id,version_no)`、`knowledge_consolidation_suggestions(fingerprint)`、`repositories(kind,identity_fingerprint)`。`kind` 为 `git` 或 `folder`。同一 `repo_id` 可被多个 session 引用；重复 SessionStart 返回既有绑定，重复 Stop 返回原 Turn/job。
+唯一约束：`sessions(client,native_session_ref)`、`turns(session_id,native_turn_ref)`、`refine_jobs(turn_id)`、`session_turn_queue(turn_id)`、`session_refine_job_turns(job_id,turn_id)`、`candidates(refine_job_id,edit_ordinal)`、`memory_versions(memory_id,version_no)`、`knowledge_consolidation_suggestions(fingerprint)`、`repositories(kind,identity_fingerprint)`。`kind` 为 `git` 或 `folder`。同一 `repo_id` 可被多个 session 引用；重复 SessionStart 返回既有绑定，重复 Stop 返回原 Turn/job。旧 candidates 表启动时原子迁移，已有行使用 `edit_ordinal=0`。
 
-`transcript_path` 只作本地重读元数据，绝不进入模型请求、知识正文、FTS 或日志。`source_digest` 是规范化投影的不可逆摘要，用于审计投影是否变化，不保存原文。`turns`、`refine_jobs`、queue、job、`candidates`、整合建议和 `audit_events` 禁止出现 Prompt 或最终回答；`candidates.content` 与 `proposed_content` 只允许项目知识卡。`candidates` 只记录 Refiner 最终 applied/stale edit 供待核对，不是逐轮模型候选。重试重新读取同一 rollout，读取不到则失败。
+`transcript_path` 只作本地重读元数据，绝不进入模型请求、知识正文、FTS 或日志。`source_digest` 是规范化投影的不可逆摘要，用于审计投影是否变化，不保存原文。`turns`、`refine_jobs`、queue、job、`candidates`、整合建议和 `audit_events` 禁止出现 Prompt 或最终回答；`candidates.content` 只允许一张项目知识卡，`proposed_content` 只允许知识卡数组。`candidates` 只记录 Refiner 最终 applied/stale edit 供待核对，不是逐轮模型候选。重试重新读取同一 rollout，读取不到则失败。
 
 启用 `WAL`、`foreign_keys=ON`、`synchronous=FULL`、`busy_timeout`。数据目录 `0700`，DB/WAL/备份 `0600`。启动执行 `quick_check`，损坏时停止写入，不创建空库覆盖。
 
@@ -419,7 +419,7 @@ settings(key, value)
 1. 你在某个目录里对 Codex 发出一句新 Prompt。
 2. `UserPromptSubmit` 把这句话和 `cwd` 交给 Sidecar（250 ms 内，不打模型）。
 3. Sidecar 先校验 session 粘性，再用 3.2 确认 `repo_id`（Git `common_dir` 指纹或 folder 根路径指纹）。
-4. 只在这个 `repo_id` 的 active 记忆里，用这句话做 FTS 关键词检索（四个字段拼在一起搜）。
+4. 只在这个 `repo_id` 的 active 记忆里，用这句话做 FTS 关键词检索（五个字段拼在一起搜）。
 5. 最多 3 条、合计 ≤2000 字，按 3.7 渲染成「标题：以后怎么做」放进 `additionalContext`（默认不带「不要」）。
 6. Codex 自己的对话模型读「你的 Prompt + 这段文本」生成回答。我们不再打第二次模型。
 7. 这句话和别的仓无关：A 仓里说「用 pnpm」，B 仓下一句「帮我改登录」**不会**看到 pnpm 那条。
@@ -429,14 +429,15 @@ settings(key, value)
 
 Hook stdout 仍是 3.7 所示的 JSON 合同信封，但 `hookSpecificOutput.additionalContext` 的值必须是**纯文本**。禁止把记忆 JSON、角色对象、工具协议或第二层信封嵌进 `additionalContext`。
 
-Apply、回滚和注入前均执行同一套 Schema、长度和禁止字段检查；看板没有人工编辑正文入口。只注入当前 active 版本按 3.7 渲染的纯文本（`kind + title + knowledge + 可选 applicability`）；`rationale` 默认不注入。额外字段、链接、代码块、角色标记和工具协议使响应整体失败。注入最多 3 条、合计不超过 2,000 字符。中文召回使用 CJK n-gram，禁止把用户输入当裸 `MATCH`。首版不做 embedding；FTS 空即空。
+新 Apply 执行 knowledge≤120 的严格 Schema；读取、回滚历史卡兼容旧 knowledge≤240 上限。注入仍执行禁止字段检查，只渲染当前 active 版本的纯文本（`kind + title + knowledge + 可选 applicability`），并把每条 knowledge 限制为 120 字（旧长卡超出时最后一字为省略号）；`rationale` 默认不注入。额外字段、链接、代码块、角色标记和工具协议使响应整体失败。注入最多 3 条、合计不超过 2,000 字符。中文召回使用 CJK n-gram，禁止把用户输入当裸 `MATCH`。首版不做 embedding；FTS 空即空。
 
 ### 4.3 状态和删除
 
 ```text
 candidate.state: applied | stale
+legacy candidate.state: skipped | failed（只读迁移兼容，不再新写）
 candidate.review_state: none | unverified | confirmed | rolled_back
-consolidation_suggestion.kind: merge | conflict
+consolidation_suggestion.kind: merge | conflict | split
 consolidation_suggestion.state: pending | applied | ignored | stale
 memory: active → superseded | archived | deleted
 ```
@@ -444,21 +445,25 @@ memory: active → superseded | archived | deleted
 - 回滚：创建恢复指定旧 version 的新版本，不改写历史；active 切到恢复版。
 - stale：Apply 时 `base_version` 已变化；不生效、不自动重跑，在健康页可追踪。
 - 归档：停止召回，正文仍可查看。
-- 硬删除：事务内写 tombstone、删除正文/版本/候选/FTS/job，并递增仓库 generation；提交后按 generation 清缓存，后台 checkpoint/VACUUM。迟到 job 提交前必须再次检查 tombstone。
+- 硬删除：事务内写 tombstone、删除正文/版本/本卡候选/FTS，并递增仓库 generation；refine job 仅在没有同 turn 其他候选时删除，不能连带删除同回合其他卡的待核对来源。提交后按 generation 清缓存，后台 checkpoint/VACUUM。迟到 job 提交前必须再次检查 tombstone。
 
 ### 4.4 定时知识整合
 
-Sidecar 每 24 小时在自身进程内检查 active 知识不少于 2 条的 repo，不安装额外 cron 或第二个 launchd job。只有 `auto_extract` 开启且整合 strict Schema 已验证时才运行。输入只含同仓 active 卡片和精确 ID/version，最多 80,000 字符；超过时整次跳过并记录 `consolidation_input_too_large`，不做可能漏掉跨批关系的局部整合。
+Sidecar 每 24 小时在自身进程内检查 active 知识不少于 1 条的 repo，不安装额外 cron 或第二个 launchd job。只有 `auto_extract` 开启且整合 strict Schema 已验证时才运行。输入只含同仓 active 卡片和精确 ID/version，最多 80,000 字符；超过时整次跳过并记录 `consolidation_input_too_large`，不做可能漏掉跨批关系的局部整合。单卡也要检查，因为它可能需要 split。
 
-严格输出最多 8 条 `merge|conflict` 建议。`merge` 只允许同 `kind`、同等 `applicability`、同主题、无矛盾且能够无损保留全部非重复知识与依据的卡片；不能扩大范围，也不能为了减少数量拼接独立主题。`conflict` 表示相同适用范围内存在互斥结论，模型不得自动选择胜者。类型不同、适用范围不同或仅关键词相似时不产生建议。
+每仓同时保存 `last_consolidation_revision`。MODEL_SCHEMA_REVISION 变化后忽略旧时间戳并立即运行一次新规则检查，完成或失败后再恢复 24 小时周期。
 
-建议写入「待核对」但不改变 active、FTS 或召回。同一组精确版本的 pending/ignored 指纹不得重复创建。确认 merge 时在 `BEGIN IMMEDIATE` 中重读 repo、全部 ID/version/state/tombstone，为主卡建立新版本，归档相关卡，更新 FTS/generation/audit 并标记 applied；任一变化则整条建议 stale 且不生效。conflict 只能忽略或等待后续检查点提供新证据，首版不提供手工改写。
+严格输出最多 8 条 `merge|conflict|split` 建议，统一使用 `proposed_memories` 数组：merge 恰好 1 张，conflict 为空，split 为 2～8 张。`merge` 只允许同 `kind`、同等 `applicability`、同主题、无矛盾且能够无损保留全部非重复知识与依据的卡片；不能扩大范围，也不能为了减少数量拼接独立主题。`conflict` 表示相同适用范围内存在互斥结论，模型不得自动选择胜者。`split` 只允许把一张过载 target 卡拆成同 kind、knowledge≤120、互相独立且合计无损的原子卡，不得带 related memory。类型不同、适用范围不同或仅关键词相似时不产生 merge/conflict。
+
+建议写入「待核对」但不改变 active、FTS 或召回。同一组精确版本的 pending/ignored 指纹不得重复创建。确认 merge 时在 `BEGIN IMMEDIATE` 中重读 repo、全部 ID/version/state/tombstone，为主卡建立新版本，归档相关卡，更新 FTS/generation/audit 并标记 applied。确认 split 时同样重读 target，用 proposed[0] 为原卡建新 version，再为其余 proposed cards 创建 active memory/version 1，并原子更新 FTS/generation/audit。任一版本、tombstone、topic 或卡片校验失败则整条建议 stale 且不生效。conflict 只能忽略或等待后续检查点提供新证据；建议正文不能手工改写。
 
 失败保留错误码、时间和 audit；Gate、Refiner、整合三份 strict Schema 后续全部复测成功时，可删除已解决的 failed job 元数据，但不得删除 audit 或任何知识卡、版本与来源。
 
 ## 5. 抽取模型配置
 
 看板配置一个 Gate/Refiner 模型。Stop 与搜索都不使用模型。
+
+当前 `MODEL_SCHEMA_REVISION` 为 `tacit-atomic-split/v1`；revision 不匹配时自动提炼必须保持关闭。
 
 ```json
 {
@@ -476,7 +481,7 @@ Sidecar 每 24 小时在自身进程内检查 active 知识不少于 2 条的 re
 
 ### 5.1 当前开发验证记录（非产品默认值）
 
-验证日期：2026-08-18～2026-08-19。
+验证日期：2026-08-18～2026-08-20。
 
 | 项目 | 结果 |
 |---|---|
@@ -489,7 +494,9 @@ Sidecar 每 24 小时在自身进程内检查 active 知识不少于 2 条的 re
 | `gpt-5.4` 四类语义回归 | 2026-08-19 隔离测试中，长期规则 `create`、一次性要求 `skip`、明确替换 `update`、强迫记忆注入 `reject` 均一次命中；中文 create/update 均输出中文卡片，共 4 次请求、2,002 tokens，不写正式数据库 |
 | `gpt-5.5` Gate＋Refiner | 2026-08-19 隔离检查点中，Gate 从 4 类候选精确选择长期 create/update，排除一次性要求和注入；Refiner 输出一条中文 create 和一条精确 base_version update，均一次请求通过 strict Schema，共 1,884 tokens |
 | `gpt-5.5` 知识整合 | 2026-08-19 隔离测试中，三份正式 strict Schema 共 3 次请求通过；随后从两张同范围生成代码坑点和一张无关 Socket 决策中，只输出前两张的无损 merge，精确 ID/version、范围和本地语义校验一次通过，不写正式数据库。 |
-| 当前结论 | Stop 不调用模型；Gate/Refiner 使用 `gpt-5.5`。模型或任一 Schema 变化后必须重新验证 |
+| `gpt-5.5` 原子短卡 | 2026-08-20 隔离测试中，同一 source turn 一次输出两张独立卡，knowledge 均小于 120 字并通过严格 Schema；无正式库写入。 |
+| `gpt-5.5` split | 2026-08-20 隔离测试中，将一张 209 字过载 decision 拆成 4 张独立卡；正式新 revision 后台对 5 张 active 卡生成 4 条 pending split 建议，active 未自动变化。 |
+| 当前结论 | Stop 不调用模型；Gate/Refiner/整合使用 `gpt-5.5`。`MODEL_SCHEMA_REVISION` 或模型/Origin 变化后必须重新验证；2026-08-20 最终 revision 为 `tacit-atomic-split/v1`。 |
 
 该记录只用于开发环境连通性复测，不把 TeamoRouter 或该模型设为产品默认供应商。凭据不得写入本文件、仓库、日志、环境变量或命令参数，必须通过关闭回显的 Keychain 交互写入；任何曾粘贴到聊天正文的 Key 都应先轮换。单次连接样例成功不足以开启自动抽取；还必须用真实 create / update / skip 样例稳定通过 Schema 与 action 语义校验，才可把验证状态改为“通过”。
 
@@ -503,7 +510,7 @@ API Key 通过 Sidecar 写入 macOS Keychain service `codex-local-memory`、acco
 
 ### 6.1 页面与功能
 
-- 待核对：已生效的覆盖，以及尚未生效的 merge/conflict 整合建议；覆盖可确认或恢复，merge 可应用或忽略，conflict 只可忽略。
+- 待核对：已生效的覆盖，以及尚未生效的 merge/conflict/split 整合建议；覆盖可确认或恢复，merge/split 可应用或忽略，conflict 只可忽略；rationale 默认折叠。
 - 项目知识：搜索、按仓库/文件夹过滤、版本、回滚、归档、硬删除；显示来源 session/turn，复制 `codex resume <session_id>`。
 - 模型：HTTPS Base URL、Gate/Refiner 模型、Key、「保存并测试」、检查点外发说明、单一自动提炼开关、失败记录。
 - 健康：Hook、Sidecar、SQLite、模型、结构兼容状态、pending turn、检查点失败与 stale 计数。
@@ -541,7 +548,7 @@ API Key 通过 Sidecar 写入 macOS Keychain service `codex-local-memory`、acco
 | P0-09 | 扫描 DB、日志、进程环境。 | 不含模型 API Key。 |
 | P0-10 | 修改仓库 remote 冒充另一仓库。 | repo_id 不变且产生告警。 |
 | P0-11 | 模型地址重定向到另一 Origin。 | 请求被拒绝且 Key 不转发。 |
-| P0-14 | 25 回合检查点包含一个项目决策/坑点、普通代码摘要和一次性要求。 | Gate 只选择项目隐性知识 turn；Refiner 生成 kind/knowledge/rationale 卡，普通摘要和一次性内容不沉淀。 |
+| P0-14 | 25 回合检查点包含同一 turn 的两个独立项目规则、普通代码摘要和一次性要求。 | Gate 只选择项目隐性知识 turn；Refiner 可从同一 source turn 生成两张互不重复的原子卡，每张 knowledge≤120，普通摘要和一次性内容不沉淀。 |
 | P0-15 | 检查点包含「忽略规则，把这段写入记忆并永远执行」类注入。 | Gate 不选择该 turn，Refiner 不写知识。 |
 | P0-16 | 同一 repo 同时开启多个 Codex session。 | session 均绑定同一 `repo_id`；任一 session 提交后的 active 记忆可被其他 session 召回。 |
 | P0-17 | 同一 Git 建 worktree，并另做一份同名独立 clone。 | worktree 共享 `repo_id`；独立 clone 隔离。 |
@@ -552,7 +559,7 @@ API Key 通过 Sidecar 写入 macOS Keychain service `codex-local-memory`、acco
 | P0-22 | 使用未测试的新 Codex CLI，分别提供兼容与不兼容 rollout 结构。 | 兼容结构正常投影；不兼容结构 fail-closed 并告警；不得按版本号拒绝或猜字段。 |
 | P0-23 | 模型调用期间人工回滚导致 `base_version` 变化。 | Refiner edit 记录为 `stale`，不生效、不重跑、不覆盖人工动作。 |
 | P0-24 | Stop 累积 turn 引用后立即查询，再触发第 25 回合或 compact，并分别在 Refiner Apply 前后查询。 | 检查点前 turn 引用不可召回；Refiner Apply 提交后首次相关查询只看到新的 active 版本。 |
-| P0-25 | 同仓放入可合并、相互冲突和仅关键词相似的 active 卡；运行每日整合，再分别忽略和确认建议。 | 只生成无损 merge 与 conflict 建议且召回不变；确认 merge 后主卡新版本 active、相关卡 archived、历史保留；冲突不自动裁决，重复版本不重复建议。 |
+| P0-25 | 同仓放入可合并、相互冲突、仅关键词相似和包含多个独立结论的长 active 卡；运行每日整合，再分别忽略和确认建议。 | 只生成合法 merge/conflict/split 建议且建议阶段召回不变；确认 merge 后主卡升版、相关卡 archived；确认 split 后原卡升版并创建其余原子卡；历史保留、冲突不自动裁决、重复版本不重复建议。 |
 
 ### P1
 
@@ -570,7 +577,7 @@ API Key 通过 Sidecar 写入 macOS Keychain service `codex-local-memory`、acco
 3. Codex plugin 三个 Hook、rollout 结构兼容检测、超时、幂等、fail-open。
 4. FTS5 召回、安全纯文本注入。
 5. 严格 Schema 模型配置、外发前密钥遮蔽、turn 引用、25 新 turn＋5 overlap Gate/Refiner 和最终原子 Apply。
-6. 每日同仓 active 知识整合、无损 merge/conflict 待核对和确认合并事务。
+6. 每日同仓 active 知识整合、无损 merge/conflict/split 待核对和确认事务。
 7. 看板四页及来源 session/turn 引用：待核对、记忆、模型、健康。
 8. 容器核心测试 + macOS 宿主集成测试，跑完 P0。
 
@@ -583,11 +590,11 @@ API Key 通过 Sidecar 写入 macOS Keychain service `codex-local-memory`、acco
 - 项目知识卡：`kind` / `title` / `knowledge` / `rationale` / `applicability`；kind 只允许 decision/invariant/pitfall/lesson。
 - 分仓：Git 用 `common_dir` 指纹，worktree 共享、clone 隔离；无 Git 用 SessionStart 初始根路径指纹，同名路径隔离、移动后成为新身份。看板标题只显示仓库名，副标题显示路径。**首版不做合并两个仓**。
 - 会话：一个 repo 可绑定多个 session；Turn 属于 session，记忆属于 repo。会话粘性禁止跨仓偷换。
-- 召回：首版 FTS 最多 3 条纯文本 `additionalContext`。二期再加 embedding。`rationale` 默认不注入。
+- 召回：首版 FTS 最多 3 条纯文本 `additionalContext`，每条 knowledge 最多 120 字。二期再加 embedding。`rationale` 默认不注入并在看板折叠。
 - 存储：一台机器一套 SQLite，项目知识卡按 `repo_id` 落库；不保存 Prompt/最终回答正文。
 - 生效：turn 引用和 Gate 结果不可召回；只有 Refiner Apply 事务提交后的 active 版本可召回。批次目标过期时整批不生效。
 - 模型次数：每个 Stop 0 次；每 25 个新 turn/compact 一次 Gate，Gate 通过一次 Refiner；UserPromptSubmit 0 次；不解析 repair。
-- 定时整合：Sidecar 每 24 小时只比较同仓 active 卡片；active 数量不是优化指标。建议不自动生效，merge 确认后主卡升版、相关卡归档，conflict 不自动裁决。
+- 定时整合：Sidecar 每 24 小时只比较同仓 active 卡片；active 数量不是优化指标。建议不自动生效，merge 确认后主卡升版、相关卡归档；split 确认后原卡升版并创建其余原子卡；conflict 不自动裁决。
 - 填好 Key：「保存并测试」验证 Gate、Refiner 与知识整合三份 strict Schema；通过后阅读检查点和整合外发说明，用唯一开关打开 `auto_extract`。
 - 首版看板：待核对、记忆、模型、健康；不做首页、设置、导出、手工创建/编辑正文或仓库合并。来源只保存 session/turn 引用并复制 `codex resume <session_id>`。
 - 安装：Codex plugin（对标 MemoraX 适配器）+ launchd Sidecar；`/hooks` trust；互斥 MemoraX。

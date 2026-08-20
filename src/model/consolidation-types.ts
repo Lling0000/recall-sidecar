@@ -10,11 +10,11 @@ export interface ConsolidationMemoryRef {
 }
 
 export interface ConsolidationSuggestion {
-  kind: "merge" | "conflict";
+  kind: "merge" | "conflict" | "split";
   target_memory_id: string;
   target_base_version: number;
   related_memories: ConsolidationMemoryRef[];
-  proposed_memory: MemoryCard | null;
+  proposed_memories: MemoryCard[];
   reason: string;
 }
 

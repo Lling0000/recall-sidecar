@@ -1,3 +1,38 @@
+export const CANDIDATES_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS candidates (
+  id TEXT PRIMARY KEY,
+  refine_job_id TEXT NOT NULL REFERENCES refine_jobs(id) ON DELETE CASCADE,
+  edit_ordinal INTEGER NOT NULL DEFAULT 0 CHECK (edit_ordinal >= 0),
+  repo_id TEXT NOT NULL REFERENCES repositories(id),
+  action TEXT NOT NULL,
+  target_id TEXT,
+  applied_memory_id TEXT,
+  base_version INTEGER,
+  revision INTEGER NOT NULL,
+  content TEXT,
+  state TEXT NOT NULL CHECK (state IN ('applied', 'stale', 'skipped', 'failed')),
+  review_state TEXT NOT NULL CHECK (review_state IN ('none', 'unverified', 'confirmed', 'rolled_back')),
+  created_at TEXT NOT NULL,
+  UNIQUE(refine_job_id, edit_ordinal)
+);`;
+
+export const CONSOLIDATION_SUGGESTIONS_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS knowledge_consolidation_suggestions (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL REFERENCES knowledge_consolidation_jobs(id) ON DELETE CASCADE,
+  repo_id TEXT NOT NULL REFERENCES repositories(id),
+  kind TEXT NOT NULL CHECK (kind IN ('merge', 'conflict', 'split')),
+  target_memory_id TEXT NOT NULL,
+  target_base_version INTEGER NOT NULL,
+  related_json TEXT NOT NULL,
+  proposed_content TEXT,
+  reason TEXT NOT NULL,
+  fingerprint TEXT NOT NULL UNIQUE,
+  state TEXT NOT NULL CHECK (state IN ('pending', 'applied', 'ignored', 'stale')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);`;
+
 export const DATABASE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS repositories (
   id TEXT PRIMARY KEY,
@@ -49,20 +84,7 @@ CREATE TABLE IF NOT EXISTS refine_jobs (
   updated_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS candidates (
-  id TEXT PRIMARY KEY,
-  refine_job_id TEXT NOT NULL UNIQUE REFERENCES refine_jobs(id) ON DELETE CASCADE,
-  repo_id TEXT NOT NULL REFERENCES repositories(id),
-  action TEXT NOT NULL,
-  target_id TEXT,
-  applied_memory_id TEXT,
-  base_version INTEGER,
-  revision INTEGER NOT NULL,
-  content TEXT,
-  state TEXT NOT NULL CHECK (state IN ('applied', 'stale')),
-  review_state TEXT NOT NULL CHECK (review_state IN ('none', 'unverified', 'confirmed', 'rolled_back')),
-  created_at TEXT NOT NULL
-);
+${CANDIDATES_TABLE_SQL}
 
 CREATE TABLE IF NOT EXISTS session_refine_jobs (
   id TEXT PRIMARY KEY,
@@ -132,21 +154,7 @@ CREATE TABLE IF NOT EXISTS knowledge_consolidation_jobs (
 CREATE UNIQUE INDEX IF NOT EXISTS consolidation_active_repo
 ON knowledge_consolidation_jobs(repo_id) WHERE state IN ('queued', 'running');
 
-CREATE TABLE IF NOT EXISTS knowledge_consolidation_suggestions (
-  id TEXT PRIMARY KEY,
-  job_id TEXT NOT NULL REFERENCES knowledge_consolidation_jobs(id) ON DELETE CASCADE,
-  repo_id TEXT NOT NULL REFERENCES repositories(id),
-  kind TEXT NOT NULL CHECK (kind IN ('merge', 'conflict')),
-  target_memory_id TEXT NOT NULL,
-  target_base_version INTEGER NOT NULL,
-  related_json TEXT NOT NULL,
-  proposed_content TEXT,
-  reason TEXT NOT NULL,
-  fingerprint TEXT NOT NULL UNIQUE,
-  state TEXT NOT NULL CHECK (state IN ('pending', 'applied', 'ignored', 'stale')),
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
+${CONSOLIDATION_SUGGESTIONS_TABLE_SQL}
 
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
   memory_id UNINDEXED,

@@ -12,11 +12,11 @@ Only eligible_turn_ids may be selected; context-only overlap turns can never be 
 The invariant is mandatory: should_refine MUST be true exactly when selected_turn_ids is non-empty, and false exactly when it is empty. Check this invariant before responding.`;
 
 export const REFINER_PROMPT = `You are the final refiner for repository-scoped tacit project knowledge.
-Use only Gate-selected eligible turns. Produce the smallest evidence-backed set of create or update edits.
+Use only Gate-selected eligible turns. Produce an atomic evidence-backed set of create or update edits. One card must contain exactly one independently recallable decision, invariant, pitfall, or lesson. Never combine independent rules merely to reduce the edit count.
 Store only decisions, hidden invariants, observed pitfalls with causes, and reusable project-specific lessons. Do not store ordinary code facts, task summaries, personal preferences, generic procedures, or current progress.
 Use update only for the same knowledge topic in active_memories, with its exact id and version. Otherwise create only when clearly distinct.
-Each source turn may support at most one edit. Return no edit when evidence is uncertain.
-Write cards in the primary language of the evidence while preserving technical terms. Rationale must state an evidence-backed reason, not invented verification.`;
+One selected source turn may support multiple distinct atomic edits, but the same active memory target may be updated at most once. Return no edit when evidence is uncertain.
+Write knowledge as one or two complete sentences, at most 120 characters. Write cards in the primary language of the evidence while preserving technical terms. Rationale must state evidence without repeating knowledge or inventing verification.`;
 
 export const GATE_SCHEMA = {
   type: "object",
@@ -63,7 +63,7 @@ export const REFINER_SCHEMA = {
             properties: {
               kind: { enum: ["decision", "invariant", "pitfall", "lesson"] },
               title: { type: "string", minLength: 1, maxLength: 40 },
-              knowledge: { type: "string", minLength: 1, maxLength: 240 },
+              knowledge: { type: "string", minLength: 1, maxLength: 120 },
               rationale: { type: "string", minLength: 1, maxLength: 200 },
               applicability: { type: "string", maxLength: 80 },
             },

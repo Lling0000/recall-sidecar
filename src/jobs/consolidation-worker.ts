@@ -63,7 +63,7 @@ export class KnowledgeConsolidationWorker {
       const apiKey = await this.keyProvider.get();
       if (!configuration || !apiKey) throw new Error("model_not_configured");
       const active = this.database.consolidations.activeMemories(job.repoId);
-      if (active.length < 2) {
+      if (active.length < 1) {
         this.database.consolidations.complete(job.jobId, []);
         return;
       }

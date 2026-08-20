@@ -84,8 +84,14 @@ function extractionReview(review) {
 function consolidationReview(suggestion) {
   const panel = element("article", undefined, "review-panel consolidation-review");
   const heading = element("div", undefined, "review-heading");
+  const suggestionTitle =
+    suggestion.kind === "merge"
+      ? "知识整合建议"
+      : suggestion.kind === "split"
+        ? "知识拆分建议"
+        : "知识冲突";
   heading.append(
-    element("h2", suggestion.kind === "merge" ? "知识整合建议" : "知识冲突"),
+    element("h2", suggestionTitle),
     element("span", suggestion.repoDisplayName, "muted"),
   );
   const compare = element("div", undefined, "compare consolidation-cards");
@@ -93,8 +99,13 @@ function consolidationReview(suggestion) {
   for (const related of suggestion.related) {
     compare.append(knowledgeCard(`相关卡 · v${related.version}`, related.card));
   }
-  if (suggestion.proposedMemory) {
-    compare.append(knowledgeCard("建议整合后", suggestion.proposedMemory));
+  for (const [index, proposed] of suggestion.proposedMemories.entries()) {
+    compare.append(
+      knowledgeCard(
+        suggestion.kind === "split" ? `建议拆分 ${index + 1}` : "建议整合后",
+        proposed,
+      ),
+    );
   }
   const reason = element("p", `判断原因：${suggestion.reason}`, "review-reason muted");
   const actions = element("div", undefined, "actions");
@@ -107,10 +118,10 @@ function consolidationReview(suggestion) {
       await renderReviews();
     }),
   );
-  if (suggestion.kind === "merge") {
+  if (suggestion.kind === "merge" || suggestion.kind === "split") {
     actions.append(
       actionButton(
-        "确认整合",
+        suggestion.kind === "split" ? "确认拆分" : "确认整合",
         "primary",
         async () => {
           const result = await api(
@@ -122,7 +133,7 @@ function consolidationReview(suggestion) {
           }
           await renderReviews();
         },
-        "arrows-merge",
+        suggestion.kind === "split" ? "git-branch" : "arrows-merge",
       ),
     );
   } else {
@@ -138,8 +149,14 @@ function knowledgeCard(label, card) {
     element("h3", label),
     field("类型", card.kind),
     field("项目知识", card.knowledge),
-    field("形成原因", card.rationale),
     field("适用场景", card.applicability),
+    evidenceDetails(card.rationale),
   );
   return node;
+}
+
+function evidenceDetails(rationale) {
+  const details = element("details", undefined, "evidence-details");
+  details.append(element("summary", "查看形成依据"), field("形成原因", rationale));
+  return details;
 }
